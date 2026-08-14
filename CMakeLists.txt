@@ -79,7 +79,15 @@ if(EL9950_BUILD_FRONTEND)
       MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
     )
   else()
-    target_compile_definitions(el9950-emu PRIVATE EL9950_SKIN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/SHARP_EL-9950G.png")
+    target_compile_definitions(el9950-emu PRIVATE EL9950_PORTABLE_SKIN=1)
+  endif()
+
+  install(TARGETS el9950-emu
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION .
+  )
+  if(NOT APPLE AND NOT EMSCRIPTEN)
+    install(FILES assets/SHARP_EL-9950G.png DESTINATION assets)
   endif()
 endif()
 

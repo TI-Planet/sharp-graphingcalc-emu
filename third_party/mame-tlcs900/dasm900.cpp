@@ -9,6 +9,8 @@ Toshiba TLCS-900/H disassembly
 #include "emu.h"
 #include "dasm900.h"
 
+#include <algorithm>
+
 namespace {
 
 enum e_mnemonics

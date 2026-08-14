@@ -92,6 +92,8 @@ bool FrontendApp::initialize() {
     SDL_SetRenderVSync(renderer_, 1);
 #ifdef EL9950_BUNDLE_SKIN
     const std::string skin_path = std::string(SDL_GetBasePath()) + "../Resources/SHARP_EL-9950G.png";
+#elif defined(EL9950_PORTABLE_SKIN)
+    const std::string skin_path = std::string(SDL_GetBasePath()) + "assets/SHARP_EL-9950G.png";
 #else
     const std::string skin_path = EL9950_SKIN_PATH;
 #endif

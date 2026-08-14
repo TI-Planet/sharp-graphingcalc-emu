@@ -4,34 +4,83 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   headless:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-15-arm64]
+        os: [ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DEL9950_BUILD_FRONTEND=OFF
+          -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-  macos-frontend:
-    runs-on: macos-15-arm64
+  native-frontend:
+    name: Native frontend (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu
+            os: ubuntu-latest
+            artifact: el9950-emu-linux
+            archive: el9950-emu-linux.tar.gz
+          - name: macOS
+            os: macos-15
+            artifact: el9950-emu-macos
+            archive: el9950-emu-macos.tar.gz
+          - name: Windows
+            os: windows-latest
+            artifact: el9950-emu-windows
+            archive: el9950-emu-windows.tar.gz
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libpulse-dev libx11-dev libxext-dev \
+            libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxkbcommon-dev libwayland-dev libdecor-0-dev
       - name: Configure
-        run: cmake -S . -B build-native -G Ninja -DEL9950_BUILD_FRONTEND=ON -DCMAKE_BUILD_TYPE=Release
+        run: >-
+          cmake -S . -B build-native -G Ninja
+          -DEL9950_BUILD_FRONTEND=ON
+          -DEL9950_BUILD_TESTS=OFF
+          -DCMAKE_BUILD_TYPE=Release
       - name: Build app
         run: cmake --build build-native --target el9950-emu
+      - name: Package app
+        run: |
+          cmake --install build-native --prefix package
+          cmake -E tar czf ${{ matrix.archive }} --format=gnutar package
+      - name: Upload native frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
 
   web:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 4.0.12
@@ -45,4 +94,42 @@ jobs:
       - name: Build web frontend
         run: cmake --build build-web --target el9950-emu
       - name: Check artifacts
-        run: test -s build-web/index.html && test -s build-web/index.js && test -s build-web/index.wasm
+        run: >-
+          test -s build-web/index.html &&
+          test -s build-web/index.js &&
+          test -s build-web/index.wasm &&
+          test -s build-web/index.data
+      - name: Configure GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Stage GitHub Pages site
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir pages
+          cp build-web/index.html build-web/index.js build-web/index.wasm build-web/index.data pages/
+          touch pages/.nojekyll
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
