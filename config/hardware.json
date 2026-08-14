@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "machine": "Sharp EL-9950",
+  "cpu": {
+    "family": "TLCS-900/H",
+    "variant": "TMP91C025 / L1",
+    "clock_hz": 9830400,
+    "status": "clock provisional; CPU instruction core implemented"
+  },
+  "address_space_bits": 24,
+  "regions": [
+    {"name":"internal_io","start":"0x000000","end":"0x0007FF","status":"range inferred from firmware accesses through 0x000449; individual wiring provisional"},
+    {"name":"lcd_command","start":"0x010000","end":"0x010000","status":"observed"},
+    {"name":"lcd_data","start":"0x010001","end":"0x010001","status":"observed"},
+    {"name":"ram","start":"0x400000","end":"0x43FFFF","status":"base observed, size provisional"},
+    {"name":"flash","start":"0xF00000","end":"0xFFFFFF","status":"verified from raw ROM and firmware"},
+    {"name":"boot_page","start":"0xFFC000","end":"0xFFFFFF","status":"verified; 16 KiB"}
+  ],
+  "lcd": {"width":132,"height":64,"pages":8,"command_address":"0x010000","data_address":"0x010001"},
+  "observed_internal_behaviors": [
+    {"register":"0x00E0","mask":"0x04","behavior":"self-clearing command bit","evidence":"firmware routine F3766F-F37677"},
+    {"register":"0x0022","mask":"0x10","behavior":"ON/BREAK input, active low","evidence":"firmware break-poll path F375EA-F3761D and debounce read F376DA-F376F0"},
+    {"register":"0x0022","mask":"0x02","behavior":"backup battery healthy input, active high","evidence":"firmware FFA3EF-FFA40F; controls BACKUP battery warning"},
+    {"register":"0x0029","mask":"0x40","behavior":"operating-battery low comparator input","evidence":"firmware F376F1-F37724 and F913BC-F9140A"},
+    {"register":"0x0091","mask":"0x07","behavior":"INT1 priority; vector 0xFFFF2C","status":"implemented"},
+    {"register":"0x0334","mask":"0x04","behavior":"16 ms alarm enable; interrupt source 16, vector 0xFFFF40","status":"implemented"}
+  ],
+  "keyboard": {"outputs":7,"inputs":8,"drive_registers":["0x000006","0x000013"],"input_register":"0x000019","special_inputs":["ON","battery_compartment_reset"],"raw_code_formula":"0x17 + output + 0x20 * input","translation_table":"0xF043D4","status":"complete visible-key matrix verified against ROM 1.20"},
+  "battery": {"operating_percent_default":100,"operating_low_threshold_percent":10,"backup_healthy_default":true},
+  "roms": [{
+    "version":"1.20",
+    "size":1048576,
+    "sha256":"deae0913c635b02e5b273db20905fa57993ec035edb7cbf78f08f9bc79f42082",
+    "distributed":false
+  }]
+}

@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>EL-9950 Emulator</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0c;color:#d7dddd;font:14px system-ui}canvas{width:100%;height:100%;display:block}#rom-picker{display:none}</style></head><body>
+<input id="rom-picker" type="file" accept=".bin,application/octet-stream"><canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<script>var Module={canvas:document.getElementById('canvas'),preRun:[function(){FS.mkdir('/persist');FS.mount(IDBFS,{},'/persist');FS.syncfs(true,function(e){if(e)console.error(e)})}]};
+document.getElementById('rom-picker').addEventListener('change',async function(){if(!this.files.length)return;let b=new Uint8Array(await this.files[0].arrayBuffer());FS.writeFile('/selected.bin',b);Module.ccall('el9950_web_load_rom','number',['string'],['/selected.bin'])});</script>
+{{{ SCRIPT }}}</body></html>

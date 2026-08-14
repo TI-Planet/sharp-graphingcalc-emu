@@ -1,0 +1,10 @@
+/build*/
+/.cache/
+/.DS_Store
+*.el99state
+*.flash
+*.bin
+/web/dist/
+/imgui.ini
+
+.idea/

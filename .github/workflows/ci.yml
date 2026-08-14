@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  headless:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15-arm64]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  macos-frontend:
+    runs-on: macos-15-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build-native -G Ninja -DEL9950_BUILD_FRONTEND=ON -DCMAKE_BUILD_TYPE=Release
+      - name: Build app
+        run: cmake --build build-native --target el9950-emu
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.12
+          actions-cache-folder: emsdk-cache
+      - name: Configure
+        run: >-
+          emcmake cmake -S . -B build-web -G Ninja
+          -DEL9950_BUILD_FRONTEND=ON
+          -DEL9950_BUILD_TESTS=OFF
+          -DCMAKE_BUILD_TYPE=Release
+      - name: Build web frontend
+        run: cmake --build build-web --target el9950-emu
+      - name: Check artifacts
+        run: test -s build-web/index.html && test -s build-web/index.js && test -s build-web/index.wasm
