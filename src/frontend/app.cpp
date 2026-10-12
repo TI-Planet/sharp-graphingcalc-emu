@@ -468,7 +468,7 @@ void FrontendApp::render_toolbar() {
             status_ = backup ? "Backup battery: healthy" : "Backup battery: depleted";
         }
         ImGui::Spacing();
-        ImGui::TextDisabled("The calculator sees its real low-voltage thresholds.");
+        ImGui::TextDisabled("Operating battery warnings are not yet emulated.");
         ImGui::TextDisabled("A reset may be required for a boot-time warning.");
         ImGui::EndPopup();
     }

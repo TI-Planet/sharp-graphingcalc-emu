@@ -79,6 +79,25 @@ void test_keyboard_ports() {
   CHECK(mcu.read(0x19) == 0xff);
 }
 
+void test_advanced_keyboard_input() {
+  el9950::Keyboard keyboard; el9950::LinkPort link;
+  el9950::Tmp91c025 mcu(keyboard, link); mcu.reset();
+  CHECK(mcu.read(0x29) == 0x40);
+  // P4.6 is an external input: firmware output writes must not change it.
+  for(unsigned value=0;value<256;++value) {
+    mcu.write(0x29,static_cast<std::uint8_t>(value));
+    CHECK(mcu.read(0x29) == (value | 0x40));
+  }
+  // The keyboard side is independent of the operating battery setting.
+  for(const auto percent:{0,10,100}) {
+    mcu.set_operating_battery_percent(static_cast<std::uint8_t>(percent));
+    mcu.write(0x29,0); CHECK(mcu.read(0x29) == 0x40);
+  }
+  auto regs=mcu.registers(); regs[0x29]=0;
+  mcu.restore_registers(regs); CHECK(mcu.read(0x29) == 0x40);
+  mcu.reset(); CHECK(mcu.read(0x29) == 0x40);
+}
+
 void test_on_input() {
   el9950::Keyboard keyboard;
   el9950::LinkPort link;
@@ -90,8 +109,6 @@ void test_on_input() {
   keyboard.set(el9950::Key::on, false);
   CHECK(mcu.read(0x22) == 0x1a);
   mcu.set_backup_battery_healthy(false); CHECK(mcu.read(0x22) == 0x18);
-  mcu.set_operating_battery_percent(100); CHECK((mcu.read(0x29) & 0x40) == 0);
-  mcu.set_operating_battery_percent(10); CHECK((mcu.read(0x29) & 0x40) != 0);
   mcu.request_interrupt(28); CHECK(mcu.any_interrupt_pending()); CHECK(mcu.interrupt_pending(28));
   mcu.acknowledge_interrupt(28); CHECK(!mcu.any_interrupt_pending());
 }
@@ -231,10 +248,48 @@ void optional_real_rom() {
   const auto depleted_hash=el9950::hex_sha256(el9950::sha256(std::span(depleted.framebuffer())));
   CHECK(depleted_hash=="5490c94fa30008b29e50e0adac725251d7337867b704254190ab353e5f613768");
 }
+
+void optional_menu_rom() {
+  const char *path=std::getenv("EL99_MENU_ROM"); if(!path) return;
+  el9950::Emulator emu; emu.load_rom(std::filesystem::path(path));
+  using K=el9950::Key;
+  auto tap=[&](K key){emu.set_key(key,true);emu.run_cycles(500'000);emu.set_key(key,false);emu.run_cycles(3'000'000);};
+  auto lcd_region_hash=[&](unsigned width,unsigned height){
+    std::vector<std::uint8_t> pixels;
+    for(unsigned y=0;y<height;++y)
+      for(unsigned x=0;x<width;++x) pixels.push_back(emu.framebuffer()[y*el9950::kLcdWidth+x]);
+    return el9950::hex_sha256(el9950::sha256(pixels));
+  };
+  emu.run_cycles(20'000'000); tap(K::on); emu.run_cycles(20'000'000);
+  tap(K::clear); tap(K::clear);
+  CHECK(emu.bus().peek8(0x400d2e)==0); // Firmware's advanced-side flag.
+  const auto calculation_state=emu.save_state();
+  // These LCD regions match EL-9900 1.09, EL-9900G 3.01, EL-9900GS2 4.10,
+  // and EL-9950 1.20. Crop labels to exclude ROM-specific stored programs.
+  tap(K::prgm);
+  CHECK(lcd_region_hash(42,24)=="62eeccb507accf1aecf5b9966f3385d75a06c44bda142d41a2d9c4f839ceb1e6"); // EXEC/EDIT/NEW
+  emu.load_state(calculation_state); tap(K::math);
+  CHECK(lcd_region_hash(42,64)=="9e2379a753e7f035dd05afcc8a8f441918f4f719824709a9738028f07d0a51e7"); // CALC through COMPLX
+  emu.load_state(calculation_state); tap(K::second); tap(K::prgm);
+  CHECK(lcd_region_hash(132,8)=="ac54e604d70ded502e9f2dcdf2cc40d475dc680e4b6f7e0d5dd048a09208d13b"); // SOLVER
+  // Old snapshots may contain the basic-side flag and a low P4 latch.
+  // EL-9950 firmware bypasses the side detector and always initializes advanced.
+  if(!emu.known_rom()) {
+    emu.load_state(calculation_state);
+    emu.bus().write8(0x400d2e,1); emu.bus().write8(0x29,0);
+    const auto legacy_state=emu.save_state();
+    emu.reset(); emu.load_state(legacy_state); tap(K::prgm);
+    CHECK(emu.bus().peek8(0x400d2e)==0);
+    tap(K::clear); // Acknowledge "THE KEYBOARD AND THE MODE CHANGED".
+    tap(K::prgm);
+    CHECK(lcd_region_hash(42,24)=="62eeccb507accf1aecf5b9966f3385d75a06c44bda142d41a2d9c4f839ceb1e6");
+  }
+  std::cout << "real ROM advanced keyboard menus: " << emu.rom().sha256_hex() << '\n';
+}
 }
 
 int main() {
-  try { test_sha256(); test_lcd(); test_flash(); test_keyboard_and_link(); test_keyboard_ports(); test_on_input(); test_cpu_and_state(); test_io_observer(); optional_real_rom(); }
+  try { test_sha256(); test_lcd(); test_flash(); test_keyboard_and_link(); test_keyboard_ports(); test_advanced_keyboard_input(); test_on_input(); test_cpu_and_state(); test_io_observer(); optional_real_rom(); optional_menu_rom(); }
   catch (const std::exception &e) { std::cerr << "unexpected exception: " << e.what() << '\n'; ++failures; }
   if (failures) { std::cerr << failures << " test(s) failed\n"; return 1; }
   std::cout << "all tests passed\n"; return 0;

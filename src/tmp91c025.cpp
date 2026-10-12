@@ -14,8 +14,8 @@ namespace el9950
         constexpr std::uint8_t kPortOn = 0x22;
         constexpr std::uint8_t kOnMask = 0x10;
         constexpr std::uint8_t kBackupBatteryMask = 0x02;
-        constexpr std::uint8_t kBatterySensePort = 0x29;
-        constexpr std::uint8_t kOperatingBatteryLowMask = 0x40;
+        constexpr std::uint8_t kKeyboardSidePort = 0x29;
+        constexpr std::uint8_t kAdvancedKeyboardMask = 0x40;
         constexpr std::uint16_t kAlarmEnable = 0x0334;
 
         // Model the five wall-clock alarms as 1, 2, 16, 500 and 1000 ms periods.
@@ -75,16 +75,14 @@ namespace el9950
                 value |= kBackupBatteryMask;
             return value;
         }
-        if (reg == kBatterySensePort)
+        if (reg == kKeyboardSidePort)
         {
-            auto value = static_cast<std::uint8_t>(regs_[reg] & ~kOperatingBatteryLowMask);
-            // The firmware drives P4.7, waits for the comparator to settle, and reads
-            // P4.6. The analogue circuit only exposes a low-battery threshold to the
-            // MCU; the percentage is retained so frontends and test harnesses can use
-            // a natural control while the guest sees the real binary signal.
-            if (operating_battery_percent_ <= 10)
-                value |= kOperatingBatteryLowMask;
-            return value;
+            // P4.6 selects the reversible keyboard: high is advanced, low is basic.
+            // EL-9900 ROM 1.09 routine F913BC samples it with P4.7 low and stores
+            // the inverted level at 400D2E, which selects menus and key translation
+            // tables. Always expose the advanced side matching the visible skin.
+            // Overlay the input on every read, including after writes/state loads.
+            return static_cast<std::uint8_t>(regs_[reg] | kAdvancedKeyboardMask);
         }
         return regs_[reg];
     }

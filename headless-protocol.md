@@ -59,10 +59,10 @@ Applies all releases after all presses in one atomic command. IDs are the stable
 
 ### `battery`
 
-Sets the operating-battery percentage and/or backup-battery health. The guest
-hardware exposes a low-voltage comparator rather than an analogue percentage;
-percentages at or below 10% assert that comparator. Both batteries default to
-full/healthy. A reset may be needed for warnings checked only during boot.
+Sets the saved operating-battery percentage and/or the emulated backup-battery
+health input. Both default to full/healthy. The operating-battery low-voltage
+input is not yet modeled; changing its percentage does not affect guest behavior.
+A reset may be needed for the backup-battery warning checked during boot.
 
 ```json
 {"id":"battery-full","command":"battery","operating_percent":100,"backup_healthy":true}

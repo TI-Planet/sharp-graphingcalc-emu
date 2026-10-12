@@ -33,6 +33,16 @@ EL9950_ROM=/path/to/el9950_ver120.bin ./build/el9950-tests
 ./build/el9950-headless /path/to/el9950_ver120.bin 100000
 ```
 
+The reversible-keyboard menu regression also supports the supplied EL-9900
+1.09, EL-9900G 3.01, EL-9900GS2 4.10 and EL-9950 1.20 raw dumps:
+
+```sh
+EL99_MENU_ROM=/path/to/ROM.bin ./build/el9950-tests
+```
+
+It checks the real firmware's PRGM tabs, extended MATH tabs and `2ndF` + PRGM
+(SOLVER), plus recovery of an EL-9900 state saved with the basic keyboard side.
+
 The headless executable is built by default and has no SDL/ImGui dependency. It is intended for CI, scripts and coding agents. For example:
 
 ```sh
@@ -109,7 +119,8 @@ Open `http://localhost:8765/` and select a ROM. ROM bytes remain local to the br
 - The reset-compartment contact is modeled as an explicit open/close operation so maintenance chords can remain held while the contact closes.
 - Mouse and multitouch presses are tracked independently for maintenance combinations.
 - Pressed keys are highlighted directly on the skin. Right-clicking a key latches it; right-clicking it again releases it, so multi-key maintenance chords can be assembled before reset.
-- The toolbar battery control exposes operating batteries from 0–100% and the independent backup battery. Both default to full/healthy; the guest sees the hardware's real low-voltage threshold.
+- The advanced side of the reversible keyboard is always selected, matching the visible skin. EL-9900 ROMs therefore expose the full menus and secondary functions. A state saved on the basic side may show the firmware's keyboard/mode-change message once; press any key to acknowledge it.
+- The toolbar battery control retains an operating-battery setting from 0–100% and exposes the independent backup-battery input. Both default to full/healthy. The operating-battery setting is saved but its low-voltage input is not yet modeled.
 
 ## Architecture
 
@@ -138,7 +149,7 @@ Still under investigation:
 - remaining TMP91C025/L1 interrupt sources beyond the verified INT1/INT6-INT9 table entries;
 - remaining port wiring, timer behavior, clock and RAM sizing;
 - complete menu navigation beyond the verified first-use initialization and calculation screen;
-- DMA, SIO, full analogue battery-discharge behavior, sleep behavior and exact wait states;
+- DMA, SIO, operating-battery low-voltage input and analogue discharge, sleep behavior and exact wait states;
 - validated Send/Receive/Send-with-Boot-Page transfers and two-machine UI;
 - physical link/Web Serial/OHP support, which are intentionally post-v1.
 
