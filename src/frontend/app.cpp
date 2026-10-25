@@ -58,7 +58,9 @@ bool FrontendApp::initialize() {
         return false;
     SDL_SetWindowMinimumSize(window_, 960, 640);
     SDL_SetRenderVSync(renderer_, 1);
+#ifndef __EMSCRIPTEN__
     if (!update_skin()) return false;
+#endif
     lcd_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, el9950::kLcdWidth,
                                      el9950::kLcdHeight);
     SDL_SetTextureScaleMode(lcd_texture_, SDL_SCALEMODE_NEAREST);
@@ -110,6 +112,15 @@ bool FrontendApp::initialize() {
 bool FrontendApp::update_skin() {
     const auto model = emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown;
     const auto skin = el9950::skin_for(model, emulator_.keyboard_side());
+#ifdef __EMSCRIPTEN__
+    // Downloads run outside the ImGui frame. Poll until bytes are in MEMFS;
+    // returning here keeps the UI and emulation responsive while fetching.
+    const int ready = EM_ASM_INT({ return Module.requestSkin(UTF8ToString($0)); }, skin.image.data());
+    if (ready != 1) {
+        skin_screen_size_ = {};
+        return true;
+    }
+#endif
     if (skin_image_ == skin.image && skin_texture_) return true;
 #ifdef EL9950_BUNDLE_SKIN
     const std::string directory = std::string(SDL_GetBasePath()) + "../Resources/";
@@ -122,6 +133,9 @@ bool FrontendApp::update_skin() {
     auto* pixels = stbi_load((directory + std::string(skin.image)).c_str(), &width, &height, &channels, 4);
     if (!pixels) {
         status_ = "Cannot load skin: " + std::string(skin.image);
+#ifdef __EMSCRIPTEN__
+        EM_ASM({ Module.skinFailed(UTF8ToString($0)); }, skin.image.data());
+#endif
         return false;
     }
     auto* texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
@@ -131,6 +145,9 @@ bool FrontendApp::update_skin() {
     if (!loaded) {
         if (texture) SDL_DestroyTexture(texture);
         status_ = "Cannot create skin texture: " + std::string(SDL_GetError());
+#ifdef __EMSCRIPTEN__
+        EM_ASM({ Module.skinFailed(UTF8ToString($0)); }, skin.image.data());
+#endif
         return false;
     }
     if (skin_texture_) SDL_DestroyTexture(skin_texture_);
@@ -181,6 +198,9 @@ try {
 }
 
 void FrontendApp::frame() {
+#ifdef __EMSCRIPTEN__
+    if (emulator_.has_rom()) update_skin();
+#endif
     SDL_Event e;
     while (SDL_PollEvent(&e))
         event(e);
@@ -491,6 +511,13 @@ void FrontendApp::pulse(el9950::Key key) {
 }
 
 void FrontendApp::render_calculator() {
+#ifdef __EMSCRIPTEN__
+    if (!emulator_.has_rom()) {
+        skin_screen_size_ = {};
+        ImGui::TextWrapped("Load a ROM to display its calculator and keyboard.");
+        return;
+    }
+#endif
     if (emulator_.has_rom() && el9950::has_reversible_keyboard(emulator_.rom().model())) {
         int side = static_cast<int>(emulator_.keyboard_side());
         ImGui::SetNextItemWidth(190);
@@ -507,6 +534,13 @@ void FrontendApp::render_calculator() {
     const float height = std::max(100.f, avail.y - 4);
     const auto skin = el9950::skin_for(emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown,
                                       emulator_.keyboard_side());
+#ifdef __EMSCRIPTEN__
+    if (skin_image_ != skin.image) {
+        skin_screen_size_ = {};
+        ImGui::TextUnformatted("Loading keyboard image...");
+        return;
+    }
+#endif
     const float width = height * skin.width / skin.height;
     const float scale = std::min(1.f, avail.x / width);
     const ImVec2 size(width * scale, height * scale);

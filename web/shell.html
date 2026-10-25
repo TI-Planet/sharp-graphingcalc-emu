@@ -1,6 +1,34 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Sharp EL-99xx Emulator</title>
-<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0c;color:#d7dddd;font:14px system-ui}canvas{width:100%;height:100%;display:block}#rom-picker{display:none}</style></head><body>
-<input id="rom-picker" type="file" accept=".bin,application/octet-stream"><canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
-<script>var Module={canvas:document.getElementById('canvas'),preRun:[function(){FS.mkdir('/persist');FS.mount(IDBFS,{},'/persist');FS.syncfs(true,function(e){if(e)console.error(e)})}]};
-document.getElementById('rom-picker').addEventListener('change',async function(){if(!this.files.length)return;let b=new Uint8Array(await this.files[0].arrayBuffer());FS.writeFile('/selected.bin',b);Module.ccall('el9950_web_load_rom','number',['string'],['/selected.bin'])});</script>
-{{{ SCRIPT }}}</body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sharp EL-99xx Emulator</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0c;color:#d7dddd;font:14px system-ui}
+canvas{width:100%;height:100%;display:block}
+#rom-picker,[hidden]{display:none!important}
+#loading{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#090b0ce8}
+.loading-card{width:min(360px,calc(100vw - 64px));padding:24px;border:1px solid #304444;border-radius:12px;background:#11191a}
+#loading-label{margin:0 0 16px;font-size:17px;font-weight:500}
+progress{display:block;width:100%;height:10px;accent-color:#43b8aa}
+#loading-detail{min-height:20px;margin:10px 0 0;color:#9aacac;font-variant-numeric:tabular-nums}
+#loading-retry{margin-top:14px;padding:8px 18px;border:1px solid #3e8881;border-radius:6px;background:#153b37;color:#e4f5f3;font:inherit;cursor:pointer}
+#loading-retry:focus-visible{outline:2px solid #63d7c9;outline-offset:3px}
+</style>
+</head>
+<body>
+<input id="rom-picker" type="file" accept=".bin,application/octet-stream">
+<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<div id="loading" role="status" aria-live="polite" aria-busy="true">
+  <div class="loading-card">
+    <h1 id="loading-label">Starting emulator...</h1>
+    <progress id="loading-progress" max="1" aria-label="Download progress"></progress>
+    <p id="loading-detail"></p>
+    <button id="loading-retry" type="button" hidden>Retry</button>
+  </div>
+</div>
+<script src="loader.js"></script>
+{{{ SCRIPT }}}
+</body>
+</html>

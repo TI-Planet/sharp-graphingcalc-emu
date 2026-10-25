@@ -117,6 +117,12 @@ python3 -m http.server 8765 --directory build-web
 
 Open `http://localhost:8765/` and select a ROM. ROM bytes remain local to the browser. State data uses IndexedDB; persistent ROM retention is not enabled.
 
+The web build downloads keyboard images on demand after a ROM is selected,
+including the other side only when the keyboard is flipped. Downloaded images
+are reused for the rest of the session. Startup and image downloads show progress
+and offer a retry if a request fails. Host `loader.js` and the `assets/` directory
+alongside `index.html`, `index.js` and `index.wasm`; no `index.data` bundle is needed.
+
 ## Controls
 
 - Drag a raw ROM into the native window, or use **Load ROM** on the web.

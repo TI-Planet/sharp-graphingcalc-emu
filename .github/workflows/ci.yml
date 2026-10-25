@@ -94,11 +94,14 @@ jobs:
       - name: Build web frontend
         run: cmake --build build-web --target el9950-emu
       - name: Check artifacts
-        run: >-
-          test -s build-web/index.html &&
-          test -s build-web/index.js &&
-          test -s build-web/index.wasm &&
-          test -s build-web/index.data
+        run: |
+          test -s build-web/index.html
+          test -s build-web/index.js
+          test -s build-web/index.wasm
+          test -s build-web/loader.js
+          for skin in assets/SHARP_EL-*.png; do
+            test -s "build-web/$skin"
+          done
       - name: Configure GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
@@ -108,7 +111,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           mkdir pages
-          cp build-web/index.html build-web/index.js build-web/index.wasm build-web/index.data pages/
+          cp build-web/index.html build-web/index.js build-web/index.wasm build-web/loader.js pages/
+          cp -R build-web/assets pages/
           touch pages/.nojekyll
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

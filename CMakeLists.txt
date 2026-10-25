@@ -68,14 +68,16 @@ if(EL9950_BUILD_FRONTEND)
   if(EMSCRIPTEN)
     target_compile_options(el9950-emu PRIVATE -sUSE_SDL=3)
     foreach(skin IN LISTS EL9950_SKINS)
-      target_link_options(el9950-emu PRIVATE "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/${skin}@/${skin}")
+      configure_file("${skin}" "${CMAKE_CURRENT_BINARY_DIR}/${skin}" COPYONLY)
     endforeach()
+    configure_file(web/loader.js "${CMAKE_CURRENT_BINARY_DIR}/loader.js" COPYONLY)
+    set_property(TARGET el9950-emu APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
     set_target_properties(el9950-emu PROPERTIES SUFFIX ".html" OUTPUT_NAME "index")
     target_link_options(el9950-emu PRIVATE
       "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
       -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY=1 -sUSE_SDL=3
       "-sEXPORTED_FUNCTIONS=[\"_main\",\"_el9950_web_load_rom\"]"
-      "-sEXPORTED_RUNTIME_METHODS=[\"ccall\",\"FS\",\"IDBFS\"]"
+      "-sEXPORTED_RUNTIME_METHODS=[\"ccall\",\"FS\",\"IDBFS\",\"addRunDependency\",\"removeRunDependency\"]"
       -lidbfs.js
     )
     target_compile_definitions(el9950-emu PRIVATE EL9950_WEB=1)
