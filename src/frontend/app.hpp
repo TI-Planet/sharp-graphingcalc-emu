@@ -23,6 +23,8 @@ public:
     running() const { return running_; }
 
 private:
+    bool update_skin();
+    void clear_inputs();
     void event(const SDL_Event& event);
     void render_ui();
     void render_toolbar();
@@ -43,6 +45,7 @@ private:
     SDL_Window* window_{};
     SDL_Renderer* renderer_{};
     SDL_Texture* skin_texture_{};
+    std::string skin_image_;
     SDL_Texture* lcd_texture_{};
     el9950::Emulator emulator_;
     bool running_{true};

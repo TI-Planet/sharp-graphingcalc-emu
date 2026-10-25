@@ -68,7 +68,20 @@ namespace el9950
 
     KeyCoordinate Keyboard::coordinate(Key key) { return coordinates.at(static_cast<std::size_t>(key)); }
     std::string_view Keyboard::id(Key key) { return ids.at(static_cast<std::size_t>(key)); }
-    std::string_view Keyboard::name(Key key) { return names.at(static_cast<std::size_t>(key)); }
+    std::string_view Keyboard::name(Key key, KeyboardSide side) {
+        if (side == KeyboardSide::basic) {
+            switch (key) {
+            case Key::sin: return "Simp";
+            case Key::cos: return "to mixed fraction";
+            case Key::tan: return "to improper fraction";
+            case Key::log: return "to decimal";
+            case Key::ln: return "integer divide";
+            case Key::variable: return "x";
+            default: break;
+            }
+        }
+        return names.at(static_cast<std::size_t>(key));
+    }
 
     std::optional<Key> Keyboard::from_id(std::string_view id) {
         for (std::size_t index = 0; index < ids.size(); ++index)

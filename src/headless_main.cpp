@@ -278,6 +278,9 @@ namespace
             ",\"reset_contact_open\":" + std::string(emulator.reset_contact_open() ? "true" : "false") +
             ",\"operating_battery_percent\":" + std::to_string(emulator.operating_battery_percent()) +
             ",\"backup_battery_healthy\":" + std::string(emulator.backup_battery_healthy() ? "true" : "false") +
+            ",\"model\":" + json_string(el9950::model_name(emulator.rom().model())) +
+            ",\"rom_version\":" + json_string(emulator.rom().version()) +
+            ",\"keyboard_side\":" + json_string(emulator.keyboard_side() == el9950::KeyboardSide::basic ? "basic" : "advanced") +
             ",\"pressed_mask\":" + std::to_string(emulator.keyboard().pressed_mask()) +
             ",\"framebuffer_sha256\":" + json_string(el9950::hex_sha256(el9950::sha256(std::span(fb)))) + "}";
         return result;
@@ -333,6 +336,12 @@ namespace
                         emulator.set_reset_contact(false);
                     } else
                         throw std::runtime_error("reset action must be open, close, or pulse");
+                    std::cout << status_response(emulator, request, command);
+                } else if (command == "keyboard") {
+                    const auto side = json_string_field(request, "side");
+                    if (!side || (*side != "advanced" && *side != "basic"))
+                        throw std::runtime_error("keyboard requires side advanced or basic");
+                    emulator.set_keyboard_side(*side == "basic" ? el9950::KeyboardSide::basic : el9950::KeyboardSide::advanced);
                     std::cout << status_response(emulator, request, command);
                 } else if (command == "battery") {
                     if (const auto percent = json_integer_field(request, "operating_percent")) {
@@ -432,6 +441,7 @@ try {
             "  --until-halt MAX       stop when HALT is reached or after MAX cycles\n"
             "  --hold KEY             hold a key by skin id (second, variable, on, ...)\n"
             "  --release KEY          release a key by skin id\n"
+            "  --keyboard-side SIDE   select advanced (default) or basic keyboard\n"
             "  --battery PERCENT      set operating batteries from 0 to 100 (default 100)\n"
             "  --backup-depleted      emulate a depleted backup battery\n"
             "  --reset                open and close the battery-compartment contact\n"
@@ -487,6 +497,11 @@ try {
         } else if (std::string_view(argv[argument]) == "--reset") {
             emulator.set_reset_contact(true);
             emulator.set_reset_contact(false);
+        } else if (std::string_view(argv[argument]) == "--keyboard-side") {
+            if (++argument >= argc) throw std::runtime_error("--keyboard-side requires advanced or basic");
+            const std::string_view side = argv[argument];
+            if (side != "advanced" && side != "basic") throw std::runtime_error("invalid keyboard side");
+            emulator.set_keyboard_side(side == "basic" ? el9950::KeyboardSide::basic : el9950::KeyboardSide::advanced);
         } else if (std::string_view(argv[argument]) == "--battery") {
             if (++argument >= argc)
                 throw std::runtime_error("--battery requires a percentage");
@@ -550,6 +565,9 @@ try {
     if (json) {
         std::cout << "{\"schema\":1,\"rom_sha256\":" << json_string(emulator.rom().sha256_hex())
             << ",\"known_1_20\":" << (emulator.known_rom() ? "true" : "false")
+            << ",\"model\":" << json_string(el9950::model_name(emulator.rom().model()))
+            << ",\"rom_version\":" << json_string(emulator.rom().version())
+            << ",\"keyboard_side\":" << json_string(emulator.keyboard_side() == el9950::KeyboardSide::basic ? "basic" : "advanced")
             << ",\"cycles\":" << executed << ",\"total_cycles\":" << emulator.cycles()
             << ",\"pc\":" << cpu.pc << ",\"sr\":" << cpu.sr
             << ",\"halted\":" << (cpu.halted ? "true" : "false")
@@ -567,6 +585,9 @@ try {
     } else {
         std::cout << "rom_sha256=" << emulator.rom().sha256_hex() << '\n'
             << "known_1_20=" << (emulator.known_rom() ? "yes" : "no") << '\n'
+            << "model=" << el9950::model_name(emulator.rom().model()) << '\n'
+            << "rom_version=" << emulator.rom().version() << '\n'
+            << "keyboard_side=" << (emulator.keyboard_side() == el9950::KeyboardSide::basic ? "basic" : "advanced") << '\n'
             << "cycles=" << executed << '\n'
             << "total_cycles=" << emulator.cycles() << '\n'
             << "pc=0x" << std::hex << cpu.pc << '\n'

@@ -20,6 +20,7 @@ add_library(el9950_core
   src/lcd.cpp
   src/link.cpp
   src/rom.cpp
+  src/skin.cpp
   src/sha256.cpp
   src/tmp91c025.cpp
   third_party/mame-tlcs900/tlcs900.cpp
@@ -39,6 +40,16 @@ endif()
 add_executable(el9950-headless src/headless_main.cpp)
 target_link_libraries(el9950-headless PRIVATE el9950_core)
 
+set(EL9950_SKINS
+  assets/SHARP_EL-9950G.png
+  assets/SHARP_EL-9900_advanced-keyboard.png
+  assets/SHARP_EL-9900_simple-keyboard.png
+  assets/SHARP_EL-9900G_advanced-keyboard.png
+  assets/SHARP_EL-9900G_simple-keyboard.png
+  assets/SHARP_EL-9900G_SII_advanced-keyboard.png
+  assets/SHARP_EL-9900G_SII_simple-keyboard.png
+)
+
 if(EL9950_BUILD_FRONTEND)
   include(cmake/Dependencies.cmake)
   add_executable(el9950-emu
@@ -56,19 +67,21 @@ if(EL9950_BUILD_FRONTEND)
   target_link_libraries(el9950-emu PRIVATE el9950_core SDL3::SDL3)
   if(EMSCRIPTEN)
     target_compile_options(el9950-emu PRIVATE -sUSE_SDL=3)
+    foreach(skin IN LISTS EL9950_SKINS)
+      target_link_options(el9950-emu PRIVATE "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/${skin}@/${skin}")
+    endforeach()
     set_target_properties(el9950-emu PROPERTIES SUFFIX ".html" OUTPUT_NAME "index")
     target_link_options(el9950-emu PRIVATE
       "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
-      "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/assets/SHARP_EL-9950G.png@/assets/SHARP_EL-9950G.png"
       -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY=1 -sUSE_SDL=3
       "-sEXPORTED_FUNCTIONS=[\"_main\",\"_el9950_web_load_rom\"]"
-      "-sEXPORTED_RUNTIME_METHODS=[\"ccall\",\"FS\"]"
+      "-sEXPORTED_RUNTIME_METHODS=[\"ccall\",\"FS\",\"IDBFS\"]"
       -lidbfs.js
     )
-    target_compile_definitions(el9950-emu PRIVATE EL9950_WEB=1 EL9950_SKIN_PATH="/assets/SHARP_EL-9950G.png")
+    target_compile_definitions(el9950-emu PRIVATE EL9950_WEB=1)
   elseif(APPLE)
-    target_sources(el9950-emu PRIVATE assets/SHARP_EL-9950G.png)
-    set_source_files_properties(assets/SHARP_EL-9950G.png PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(el9950-emu PRIVATE ${EL9950_SKINS})
+    set_source_files_properties(${EL9950_SKINS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_compile_definitions(el9950-emu PRIVATE EL9950_BUNDLE_SKIN=1)
     set_target_properties(el9950-emu PROPERTIES
       MACOSX_BUNDLE TRUE
@@ -80,6 +93,12 @@ if(EL9950_BUILD_FRONTEND)
     )
   else()
     target_compile_definitions(el9950-emu PRIVATE EL9950_PORTABLE_SKIN=1)
+    add_custom_command(TARGET el9950-emu POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:el9950-emu>/assets"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EL9950_SKINS} "$<TARGET_FILE_DIR:el9950-emu>/assets"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      VERBATIM
+    )
   endif()
 
   install(TARGETS el9950-emu
@@ -87,7 +106,7 @@ if(EL9950_BUILD_FRONTEND)
     RUNTIME DESTINATION .
   )
   if(NOT APPLE AND NOT EMSCRIPTEN)
-    install(FILES assets/SHARP_EL-9950G.png DESTINATION assets)
+    install(FILES ${EL9950_SKINS} DESTINATION assets)
   endif()
 endif()
 

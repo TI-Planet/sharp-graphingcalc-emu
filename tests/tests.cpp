@@ -2,6 +2,8 @@
 #include "el9950/flash.hpp"
 #include "el9950/lcd.hpp"
 #include "el9950/sha256.hpp"
+#include "el9950/skin.hpp"
+#include "el9950/state.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -96,6 +98,13 @@ void test_advanced_keyboard_input() {
   auto regs=mcu.registers(); regs[0x29]=0;
   mcu.restore_registers(regs); CHECK(mcu.read(0x29) == 0x40);
   mcu.reset(); CHECK(mcu.read(0x29) == 0x40);
+  keyboard.set_side(el9950::KeyboardSide::basic);
+  for (unsigned value=0; value<256; ++value) {
+    mcu.write(0x29,static_cast<std::uint8_t>(value));
+    CHECK(mcu.read(0x29) == (value & ~0x40U));
+  }
+  mcu.reset(); CHECK((mcu.read(0x29)&0x40)==0);
+  keyboard.reset(); CHECK(keyboard.side()==el9950::KeyboardSide::basic);
 }
 
 void test_on_input() {
@@ -119,6 +128,71 @@ std::vector<std::uint8_t> test_rom() {
   rom[0x0fff00]=0x00; rom[0x0fff01]=0x00; rom[0x0fff02]=0xf0;
   return rom;
 }
+std::vector<std::uint8_t> model_rom(std::string_view banner, unsigned major, unsigned minor) {
+  auto bytes=test_rom();
+  bytes[0x35813]=0x43;
+  bytes[0x35814]=0x00; bytes[0x35815]=0x00; bytes[0x35816]=0xf9; bytes[0x35817]=0;
+  std::copy(banner.begin(),banner.end(),bytes.begin()+0x90000);
+  bytes[0xfbfe4]=major; bytes[0xfbfe5]=minor;
+  return bytes;
+}
+
+void test_models_and_sides() {
+  using M=el9950::Model; using S=el9950::KeyboardSide;
+  struct Case { std::string_view banner; unsigned major,minor; M model; std::string_view version; };
+  const Case cases[]{
+    {"EL\x8a" "9900       Ver  !  ",1,0x09,M::el9900,"1.09"},
+    {"EL\x8a" "9900G      Ver  !  ",3,0x01,M::el9900g,"3.01"},
+    {"EL\x8a" "9900G SII  Ver  !  ",4,0x10,M::el9900g_sii,"4.10"},
+    {"EL\x8a" "9950       Ver  !  ",4,0x11,M::el9900g_sii,"4.11"},
+    {"EL\x8a" "9950       Ver  !  ",1,0x20,M::el9950,"1.20"},
+    {"EL\x8a" "9950       Ver  !  ",1,0x21,M::el9950,"1.21"}
+  };
+  for (const auto& c:cases) {
+    auto bytes=model_rom(c.banner,c.major,c.minor);
+    bytes[0x70000]=0x42; // User data does not change the model.
+    el9950::Emulator emu; emu.load_rom(bytes);
+    CHECK(emu.rom().model()==c.model); CHECK(emu.rom().version()==c.version);
+    CHECK(emu.keyboard_side()==S::advanced);
+    if (el9950::has_reversible_keyboard(c.model)) {
+      emu.set_keyboard_side(S::basic); CHECK((emu.bus().read8(0x29)&0x40)==0);
+      const auto state=emu.save_state();
+      auto invalid=state; invalid[invalid.size()-5]=2;
+      const auto invalid_crc=el9950::crc32(std::span(invalid).first(invalid.size()-4));
+      for(unsigned i=0;i<4;++i) invalid[invalid.size()-4+i]=(invalid_crc>>(8*i))&0xff;
+      bool rejected=false; try { emu.load_state(invalid); } catch(const std::exception&) { rejected=true; }
+      CHECK(rejected); CHECK(emu.save_state()==state);
+      emu.set_keyboard_side(S::advanced); emu.load_state(state);
+      CHECK(emu.keyboard_side()==S::basic); CHECK(emu.save_state()==state);
+      emu.reset(); CHECK(emu.keyboard_side()==S::basic);
+      // v6 snapshots have no side byte and retain the previous advanced default.
+      auto legacy=state; legacy.erase(legacy.end()-5); legacy[8]=6;
+      const auto crc=el9950::crc32(std::span(legacy).first(legacy.size()-4));
+      for (unsigned i=0;i<4;++i) legacy[legacy.size()-4+i]=(crc>>(8*i))&0xff;
+      emu.load_state(legacy); CHECK(emu.keyboard_side()==S::advanced);
+      emu.set_keyboard_side(S::basic); emu.load_rom(bytes); CHECK(emu.keyboard_side()==S::advanced);
+    } else {
+      bool rejected=false; try { emu.set_keyboard_side(S::basic); } catch (const std::exception&) { rejected=true; }
+      CHECK(rejected); CHECK(emu.keyboard_side()==S::advanced);
+    }
+    for (const auto side:{S::advanced,S::basic}) {
+      const auto skin=el9950::skin_for(c.model,side);
+      CHECK(skin.keys.size()==static_cast<unsigned>(el9950::Key::count));
+      for (const auto& r:skin.keys) {
+        CHECK(el9950::skin_key_at(skin,r.x+r.w/2,r.y+r.h/2)==r.key);
+        CHECK(r.x>=0 && r.y>=0 && r.x+r.w<=skin.width && r.y+r.h<=skin.height);
+      }
+      CHECK(!el9950::skin_key_at(skin,0,0));
+      CHECK(!el9950::skin_key_at(skin,skin.lcd_x+10,skin.lcd_y+10));
+    }
+  }
+  CHECK(el9950::RomImage::from_bytes(test_rom()).model()==M::unknown);
+  auto invalid=model_rom(cases[0].banner,1,0xfa);
+  CHECK(el9950::RomImage::from_bytes(invalid).model()==M::unknown);
+  invalid=model_rom(cases[0].banner,1,0x09); invalid[0x35817]=0xff;
+  CHECK(el9950::RomImage::from_bytes(invalid).model()==M::unknown);
+}
+
 void test_cpu_and_state() {
   el9950::Emulator emu; emu.load_rom(test_rom()); CHECK(emu.cpu_state().pc==0xf00000);
   emu.set_key(el9950::Key::second,true); emu.set_operating_battery_percent(42); emu.set_backup_battery_healthy(false);
@@ -274,7 +348,7 @@ void optional_menu_rom() {
   CHECK(lcd_region_hash(132,8)=="ac54e604d70ded502e9f2dcdf2cc40d475dc680e4b6f7e0d5dd048a09208d13b"); // SOLVER
   // Old snapshots may contain the basic-side flag and a low P4 latch.
   // EL-9950 firmware bypasses the side detector and always initializes advanced.
-  if(!emu.known_rom()) {
+  if(el9950::has_reversible_keyboard(emu.rom().model())) {
     emu.load_state(calculation_state);
     emu.bus().write8(0x400d2e,1); emu.bus().write8(0x29,0);
     const auto legacy_state=emu.save_state();
@@ -284,12 +358,45 @@ void optional_menu_rom() {
     tap(K::prgm);
     CHECK(lcd_region_hash(42,24)=="62eeccb507accf1aecf5b9966f3385d75a06c44bda142d41a2d9c4f839ceb1e6");
   }
+  if(el9950::has_reversible_keyboard(emu.rom().model())) {
+    using S=el9950::KeyboardSide;
+    emu.load_state(calculation_state);
+    emu.set_keyboard_side(S::basic);
+    CHECK((emu.bus().read8(0x29)&0x40)==0);
+    tap(K::clear); // Detect the physical flip, then acknowledge the mode change.
+    tap(K::clear);
+    CHECK(emu.bus().peek8(0x400d2e)==1);
+    const auto basic_state=emu.save_state();
+    tap(K::math);
+    CHECK(lcd_region_hash(42,64)!="9e2379a753e7f035dd05afcc8a8f441918f4f719824709a9738028f07d0a51e7");
+    emu.load_state(basic_state);
+    CHECK(emu.keyboard_side()==S::basic);
+    // Shared electrical positions select the basic-side conversion functions.
+    emu.add_breakpoint(0xf37418);
+    const std::pair<K,std::uint16_t> basic_events[]{
+      {K::sin,0x0a8c}, {K::cos,0x0a8e}, {K::tan,0x0a8f},
+      {K::log,0x0a8d}, {K::ln,0x0a61}, {K::n1,0x3100}, {K::enter,0x0f21}
+    };
+    for(const auto& [key,event]:basic_events) {
+      emu.load_state(basic_state); emu.clear_breakpoint_hit();
+      emu.set_key(key,true); emu.run_cycles(1'000'000);
+      CHECK(emu.breakpoint_hit());
+      const auto cpu=emu.cpu_state();
+      CHECK((cpu.xwa_xbc_xde_xhl[cpu.register_bank*4+1]&0xffff)==event);
+    }
+    emu.remove_breakpoint(0xf37418); emu.clear_breakpoint_hit();
+    emu.load_state(basic_state); emu.set_keyboard_side(S::advanced);
+    tap(K::clear); tap(K::clear);
+    CHECK(emu.bus().peek8(0x400d2e)==0);
+    tap(K::prgm);
+    CHECK(lcd_region_hash(42,24)=="62eeccb507accf1aecf5b9966f3385d75a06c44bda142d41a2d9c4f839ceb1e6");
+  }
   std::cout << "real ROM advanced keyboard menus: " << emu.rom().sha256_hex() << '\n';
 }
 }
 
 int main() {
-  try { test_sha256(); test_lcd(); test_flash(); test_keyboard_and_link(); test_keyboard_ports(); test_advanced_keyboard_input(); test_on_input(); test_cpu_and_state(); test_io_observer(); optional_real_rom(); optional_menu_rom(); }
+  try { test_sha256(); test_lcd(); test_flash(); test_keyboard_and_link(); test_keyboard_ports(); test_advanced_keyboard_input(); test_on_input(); test_cpu_and_state(); test_models_and_sides(); test_io_observer(); optional_real_rom(); optional_menu_rom(); }
   catch (const std::exception &e) { std::cerr << "unexpected exception: " << e.what() << '\n'; ++failures; }
   if (failures) { std::cerr << failures << " test(s) failed\n"; return 1; }
   std::cout << "all tests passed\n"; return 0;

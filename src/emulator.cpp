@@ -124,11 +124,21 @@ namespace el9950
 
     void Emulator::install_rom(RomImage image) {
         rom_ = std::move(image);
+        keyboard_.reset();
+        keyboard_.set_side(KeyboardSide::advanced);
         flash_.load(rom_->bytes());
         cycles_ = 0;
         reset_contact_open_ = false;
         last_boot_checkpoint_.clear();
         reset();
+    }
+
+    void Emulator::set_keyboard_side(KeyboardSide side) {
+        if (side != KeyboardSide::advanced && side != KeyboardSide::basic)
+            throw std::runtime_error("invalid keyboard side");
+        if (side == KeyboardSide::basic && (!rom_ || !has_reversible_keyboard(rom_->model())))
+            throw std::runtime_error("this ROM has no reversible keyboard");
+        keyboard_.set_side(side);
     }
 
     void Emulator::reset() {
@@ -223,6 +233,7 @@ namespace el9950
         for (const bool released : link_.drive_state())
             w.integer<std::uint8_t>(released);
         w.integer<std::uint8_t>(reset_contact_open_);
+        w.integer(static_cast<std::uint8_t>(keyboard_.side()));
         w.integer(crc32(w.data));
         return std::move(w.data);
     }
@@ -295,6 +306,9 @@ namespace el9950
         for (auto& line : link)
             line = r.integer<std::uint8_t>() != 0;
         const auto reset_open = r.integer<std::uint8_t>() != 0;
+        const auto side = state_version >= 7 ? r.integer<std::uint8_t>() : 0;
+        if (side > 1 || (side == 1 && !has_reversible_keyboard(rom_->model())))
+            throw std::runtime_error("invalid keyboard side for this ROM");
         if (!r.done())
             throw std::runtime_error("unexpected trailing save state data");
         std::copy(ram.begin(), ram.end(), bus_.ram().begin());
@@ -304,6 +318,7 @@ namespace el9950
         mcu_.restore_pending_interrupts(pending_interrupts);
         mcu_.restore_timer_accumulators(timer_accumulators);
         keyboard_.restore_mask(keymask);
+        keyboard_.set_side(static_cast<KeyboardSide>(side));
         mcu_.set_operating_battery_percent(operating_battery_percent);
         mcu_.set_backup_battery_healthy(backup_battery_healthy);
         lcd_.set_state(ls);

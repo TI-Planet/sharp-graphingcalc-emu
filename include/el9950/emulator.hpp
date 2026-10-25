@@ -36,6 +36,8 @@ namespace el9950
 
         std::uint64_t run_cycles(std::uint64_t cycles);
         void set_key(Key key, bool pressed);
+        void set_keyboard_side(KeyboardSide side);
+        KeyboardSide keyboard_side() const { return keyboard_.side(); }
 
         void
         set_operating_battery_percent(std::uint8_t percent) { mcu_.set_operating_battery_percent(percent); }

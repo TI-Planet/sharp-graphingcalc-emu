@@ -7,6 +7,8 @@
 
 namespace el9950
 {
+    enum class KeyboardSide : std::uint8_t { advanced, basic };
+
     enum class Key : std::uint8_t
     {
         y_equals, graph, table, window, zoom, trace,
@@ -29,6 +31,8 @@ namespace el9950
     {
     public:
         void reset();
+        KeyboardSide side() const { return side_; }
+        void set_side(KeyboardSide side) { side_ = side; }
         void set(Key key, bool pressed);
         bool pressed(Key key) const;
         std::uint8_t read_inputs(std::uint8_t active_outputs) const;
@@ -44,10 +48,11 @@ namespace el9950
 
         static KeyCoordinate coordinate(Key key);
         static std::string_view id(Key key);
-        static std::string_view name(Key key);
+        static std::string_view name(Key key, KeyboardSide side = KeyboardSide::advanced);
         static std::optional<Key> from_id(std::string_view id);
 
     private:
+        KeyboardSide side_{KeyboardSide::advanced};
         std::uint64_t pressed_{};
     };
 } // namespace el9950

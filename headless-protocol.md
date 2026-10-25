@@ -26,7 +26,7 @@ All addresses and counters are unsigned decimal JSON integers. Binary payloads u
 
 ### `status`
 
-Returns cycle count, CPU PC/SR/HALT state, reset-contact state, both battery inputs, pressed-key bitmask and framebuffer SHA-256.
+Returns cycle count, CPU PC/SR/HALT state, reset-contact state, both battery inputs, detected model/version, keyboard side, pressed-key bitmask and framebuffer SHA-256.
 
 ```json
 {"id":"1","command":"status"}
@@ -56,6 +56,24 @@ Applies all releases after all presses in one atomic command. IDs are the stable
 ```json
 {"id":"5","command":"reset","action":"pulse"}
 ```
+
+### `keyboard`
+
+Selects the physical side on EL-9900, EL-9900G and EL-9900G SII.
+The ROM detects the flip on the next calculator key press and may show its
+keyboard/mode-change message. EL-9950 and unknown ROMs reject `basic`.
+The response includes `model`, `rom_version` and `keyboard_side`; these fields
+also appear in `status` and other status-shaped responses. The CLI equivalent
+is `--keyboard-side basic` (or `advanced`, the default).
+
+```json
+{"id":"keyboard-basic","command":"keyboard","side":"basic"}
+```
+
+Key IDs retain their electrical positions across sides: `sin` is **Simp** on
+the basic side, while `cos`, `tan`, `log` and `ln` become fraction/decimal
+conversion and integer division. Save-state v7 stores the selected side;
+v4–v6 snapshots restore Advanced for compatibility.
 
 ### `battery`
 

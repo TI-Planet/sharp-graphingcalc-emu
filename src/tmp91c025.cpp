@@ -80,9 +80,10 @@ namespace el9950
             // P4.6 selects the reversible keyboard: high is advanced, low is basic.
             // EL-9900 ROM 1.09 routine F913BC samples it with P4.7 low and stores
             // the inverted level at 400D2E, which selects menus and key translation
-            // tables. Always expose the advanced side matching the visible skin.
+            // tables. The selected side is an external input, independent of the latch.
             // Overlay the input on every read, including after writes/state loads.
-            return static_cast<std::uint8_t>(regs_[reg] | kAdvancedKeyboardMask);
+            return static_cast<std::uint8_t>((regs_[reg] & ~kAdvancedKeyboardMask) |
+                (keyboard_.side() == KeyboardSide::advanced ? kAdvancedKeyboardMask : 0));
         }
         return regs_[reg];
     }
