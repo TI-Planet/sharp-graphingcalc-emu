@@ -54,7 +54,7 @@ FrontendApp::~FrontendApp() {
 bool FrontendApp::initialize() {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         return false;
-    if (!SDL_CreateWindowAndRenderer("Sharp EL-99xx Emulator", 1440, 900,SDL_WINDOW_RESIZABLE, &window_, &renderer_))
+    if (!SDL_CreateWindowAndRenderer("Sharp Graphing Calculator Emulator", 1440, 900,SDL_WINDOW_RESIZABLE, &window_, &renderer_))
         return false;
     SDL_SetWindowMinimumSize(window_, 960, 640);
     SDL_SetRenderVSync(renderer_, 1);
@@ -110,6 +110,7 @@ bool FrontendApp::initialize() {
 }
 
 bool FrontendApp::update_skin() {
+    if (emulator_.has_rom() && emulator_.info().id == "el92xx") { skin_screen_size_ = {}; return true; }
     const auto model = emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown;
     const auto skin = el9950::skin_for(model, emulator_.keyboard_side());
 #ifdef __EMSCRIPTEN__
@@ -182,15 +183,20 @@ try {
                 done += ran;
             }
         };
-        run_to_halt(20'000'000);
-        pulse(el9950::Key::on);
-        run_to_halt(20'000'000);
+        if (emulator_.info().id == "el92xx") {
+            emulator_.run_cycles(1'000'000);
+        } else {
+            run_to_halt(20'000'000);
+            pulse(el9950::Key::on);
+            run_to_halt(20'000'000);
+        }
         status_ = verified ? "ROM 1.20 verified" : "ROM loaded";
     }
     if (emulator_.rom().model() == el9950::Model::unknown)
-        status_ = "Unknown 1 MiB ROM — using EL-9950 skin";
+        status_ = emulator_.info().id == "el99xx" ? "Unknown 1 MiB ROM — using EL-9950 skin" : "Unknown 256 KiB SC62015 ROM — experimental hardware";
     else if (!restored)
         status_ = std::string(el9950::model_name(emulator_.rom().model())) + " ROM " + emulator_.rom().version();
+    if (emulator_.info().experimental) status_ += " — experimental hardware";
     return update_skin();
 } catch (const std::exception& e) {
     status_ = e.what();
@@ -210,10 +216,11 @@ void FrontendApp::frame() {
     const double elapsed = std::min(0.1, double(now - last_frame_ns_) / 1'000'000'000.0);
     last_frame_ns_ = now;
     if (emulation_running_ && emulator_.has_rom()) {
-        cycle_fraction_ += elapsed * el9950::kClockHz * (turbo_ ? 16.0 : 1.0);
+        cycle_fraction_ += elapsed * emulator_.info().cycles_per_second * (turbo_ ? 16.0 : 1.0);
         const auto budget = static_cast<std::uint64_t>(cycle_fraction_);
         cycle_fraction_ -= double(budget);
-        emulator_.run_cycles(budget);
+        try { emulator_.run_cycles(budget); }
+        catch (const std::exception& e) { emulation_running_ = false; status_ = e.what(); }
         if (emulator_.breakpoint_hit()) {
             emulation_running_ = false;
             status_ = "Breakpoint hit at 0x" + hex24(emulator_.cpu_state().pc);
@@ -367,7 +374,8 @@ void FrontendApp::sync_key(el9950::Key key) {
             break;
         }
     }
-    emulator_.set_key(key, pressed);
+    try { emulator_.set_key(key, pressed); }
+    catch (const std::exception& e) { status_ = e.what(); }
 }
 
 void FrontendApp::toggle_latched_key(el9950::Key key) {
@@ -395,7 +403,7 @@ void FrontendApp::render_ui() {
     if (ImGui::BeginChild("titlebar", ImVec2(0, 34), ImGuiChildFlags_Borders)) {
         const std::string title_text = emulator_.has_rom() ?
             "SHARP " + std::string(el9950::model_name(emulator_.rom().model())) + "  " + emulator_.rom().version() :
-            "SHARP EL-99xx Emulator";
+            "SHARP Graphing Calculator Emulator";
         const char* title = title_text.c_str();
         const float title_width = ImGui::CalcTextSize(title).x;
         ImGui::SetCursorPosX(std::max(10.f, (ImGui::GetContentRegionAvail().x - title_width) * 0.5f));
@@ -511,6 +519,43 @@ void FrontendApp::pulse(el9950::Key key) {
 }
 
 void FrontendApp::render_calculator() {
+    if (emulator_.has_rom() && emulator_.info().id == "el92xx") {
+        ImGui::BeginChild("sc62015-calculator", ImVec2(0, 0));
+        skin_screen_size_ = {};
+        update_lcd_texture();
+        ImGui::TextWrapped("EL-9200/9300 — experimental hardware. Press CL to initialize, then ENTER at PRESS ANY KEY.");
+        const auto width = std::min(ImGui::GetContentRegionAvail().x, 576.f);
+        ImGui::Image((ImTextureID)(intptr_t)lcd_texture_, ImVec2(width, width * 64.f / 96.f));
+        struct Button { const char* label; const char* id; };
+        constexpr Button buttons[]{
+            {"CALC","calc"},{"GRAPH","graph"},{"PRGM","prgm"},{"STAT","stat"},{"ON","on"},
+            {"EDIT","edit"},{"RANGE","range"},{"ZOOM","zoom"},{"MATH","math"},{"MENU","menu"},
+            {"QUIT","quit"},{"2ndF","second"},{"ALPHA","alpha"},{"SETUP","setup"},{"CL","clear"},
+            {"Up","up"},{"Left","left"},{"Down","down"},{"Right","right"},{"DEL","del"},
+            {"sin","sin"},{"cos","cos"},{"tan","tan"},{"log","log"},{"ln","ln"},
+            {"7","n7"},{"8","n8"},{"9","n9"},{"(","lparen"},{")","rparen"},
+            {"4","n4"},{"5","n5"},{"6","n6"},{"x","multiply"},{"/","divide"},
+            {"1","n1"},{"2","n2"},{"3","n3"},{"+","plus"},{"-","minus"},
+            {"0","n0"},{".","decimal"},{"(-)","negative"},{"BS","backspace"},{"ENTER","enter"},
+            {"x^2","square"},{"STO","sto"},{"X/theta/T","variable"}
+        };
+        const float key_width = std::max(48.f, (width - 4 * ImGui::GetStyle().ItemSpacing.x) / 5);
+        for (unsigned index = 0; index < std::size(buttons); ++index) {
+            if (index % 5) ImGui::SameLine();
+            if (ImGui::Button(buttons[index].label, ImVec2(key_width, 0))) {
+                const std::string_view id = buttons[index].id;
+                const auto common = el9950::Keyboard::from_id(id);
+                if (common) pulse(*common);
+                else {
+                    emulator_.set_key(id, true);
+                    emulator_.run_cycles(500'000);
+                    emulator_.set_key(id, false);
+                }
+            }
+        }
+        ImGui::EndChild();
+        return;
+    }
 #ifdef __EMSCRIPTEN__
     if (!emulator_.has_rom()) {
         skin_screen_size_ = {};
@@ -581,46 +626,59 @@ void FrontendApp::render_calculator() {
 }
 
 void FrontendApp::update_lcd_texture() {
-    std::array<std::uint32_t, el9950::kLcdWidth * el9950::kLcdHeight> pixels{};
+    const auto display = emulator_.info();
+    float width = 0, height = 0;
+    if (!lcd_texture_ || !SDL_GetTextureSize(lcd_texture_, &width, &height) || width != display.lcd_width || height != display.lcd_height) {
+        if (lcd_texture_) SDL_DestroyTexture(lcd_texture_);
+        lcd_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, display.lcd_width, display.lcd_height);
+        if (!lcd_texture_) { status_ = SDL_GetError(); return; }
+        SDL_SetTextureScaleMode(lcd_texture_, SDL_SCALEMODE_NEAREST);
+        SDL_SetTextureBlendMode(lcd_texture_, SDL_BLENDMODE_NONE);
+    }
+    std::vector<std::uint32_t> pixels(display.lcd_width * display.lcd_height);
     const auto& fb = emulator_.framebuffer();
     for (std::size_t i = 0; i < pixels.size(); ++i)
         pixels[i] = fb[i] ? 0x17201bffU : 0xb6c5b8ffU;
-    SDL_UpdateTexture(lcd_texture_, nullptr, pixels.data(), el9950::kLcdWidth * sizeof(std::uint32_t));
+    SDL_UpdateTexture(lcd_texture_, nullptr, pixels.data(), display.lcd_width * sizeof(std::uint32_t));
 }
 
 void FrontendApp::render_debugger() {
+    if (!emulator_.has_rom()) { ImGui::TextUnformatted("Load a ROM to inspect its machine."); return; }
     if (ImGui::BeginTabBar("debug-tabs")) {
         if (ImGui::BeginTabItem("CPU")) {
             const auto s = emulator_.cpu_state();
             ImGui::Text("PC  %s", hex24(s.pc).c_str());
             ImGui::Text("SR  %08X", s.sr);
-            ImGui::Text("XSP %08X", s.xssp);
-            ImGui::SeparatorText("Register banks");
-            for (int b = 0; b < 4; ++b)
-                ImGui::Text("%d  XWA %08X  XBC %08X  XDE %08X  XHL %08X", b, s.xwa_xbc_xde_xhl[b * 4], s.xwa_xbc_xde_xhl[b * 4 + 1],
-                            s.xwa_xbc_xde_xhl[b * 4 + 2], s.xwa_xbc_xde_xhl[b * 4 + 3]);
+            ImGui::SeparatorText(emulator_.info().cpu.data());
+            for (const auto& reg : s.registers)
+                ImGui::Text("%-8s %0*X", reg.name.c_str(), int((reg.bits + 3) / 4), reg.value);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Disassembly")) {
             auto address = emulator_.cpu_state().pc;
             for (int row = 0; row < 24; ++row) {
-                const auto line = el9950::disassemble(emulator_.bus(), address);
+                const auto line = emulator_.disassemble(address);
                 if (address == emulator_.cpu_state().pc)
                     ImGui::TextColored(ImVec4(.3f, .85f, .75f, 1), "> %06X  %s", address, line.text.c_str());
                 else
                     ImGui::Text("  %06X  %s", address, line.text.c_str());
-                address += std::max(1, int(line.length));
+                address = line.next_address;
             }
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Memory")) {
-            static int address = el9950::kRamBase;
+            static int address = 0;
+            static std::string memory_family;
+            if (memory_family != emulator_.info().id) {
+                memory_family = emulator_.info().id;
+                address = int(emulator_.info().ram_base);
+            }
             ImGui::InputInt("Address", &address, 1, 16, ImGuiInputTextFlags_CharsHexadecimal);
             for (int row = 0; row < 16; ++row) {
                 ImGui::Text("%06X:", address + row * 16);
                 ImGui::SameLine();
                 for (int col = 0; col < 16; ++col) {
-                    ImGui::Text("%02X", emulator_.bus().peek8(address + row * 16 + col));
+                    ImGui::Text("%02X", emulator_.peek8(address + row * 16 + col));
                     if (col != 15)
                         ImGui::SameLine();
                 }
@@ -640,7 +698,12 @@ void FrontendApp::render_debugger() {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Breakpoints")) {
-            static int bp = el9950::kFlashBase;
+            static int bp = 0;
+            static std::string breakpoint_family;
+            if (breakpoint_family != emulator_.info().id) {
+                breakpoint_family = emulator_.info().id;
+                bp = int(emulator_.info().rom_base);
+            }
             ImGui::InputInt("Address", &bp, 1, 16, ImGuiInputTextFlags_CharsHexadecimal);
             ImGui::SameLine();
             if (ImGui::Button("Add"))
@@ -658,14 +721,15 @@ void FrontendApp::render_debugger() {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("LCD")) {
-            ImGui::Text("132 x 64 | page %u | column %u", emulator_.lcd().page(), emulator_.lcd().column());
-            ImGui::Text("display %s | contrast %u | invert %s | ADC %s | COM %s", emulator_.lcd().display_on() ? "on" : "off",
-                        emulator_.lcd().contrast(), emulator_.lcd().inverted() ? "yes" : "no",
-                        emulator_.lcd().adc_reverse() ? "reverse" : "normal", emulator_.lcd().com_reverse() ? "reverse" : "normal");
+            const auto info = emulator_.info();
+            ImGui::Text("%u x %u", info.lcd_width, info.lcd_height);
+            for (const auto& reg : emulator_.device_registers()) ImGui::Text("%s: %u", reg.name.c_str(), reg.value);
+            if (info.experimental) ImGui::TextWrapped("The separate LCD indicators are not yet modeled.");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Link")) {
-            for (int line = 0; line < 3; ++line)
+            if (emulator_.info().id == "el92xx") ImGui::TextWrapped("EL-9200/9300 link wiring is not yet modeled.");
+            else for (int line = 0; line < 3; ++line)
                 ImGui::Text("P%d  %s", line + 1, emulator_.link().sample(line) ? "released/high" : "driven/low");
             ImGui::EndTabItem();
         }
@@ -675,12 +739,12 @@ void FrontendApp::render_debugger() {
 
 std::filesystem::path FrontendApp::default_state_path() const {
 #ifdef __EMSCRIPTEN__
-    return std::filesystem::path("/persist") / (emulator_.rom().sha256_hex() + ".el99state");
+    return std::filesystem::path("/persist") / (emulator_.rom().sha256_hex() + "." + std::string(emulator_.state_format()));
 #else
     char* pref = SDL_GetPrefPath("org.tiplanet", "el9950-emu");
     const std::filesystem::path base = pref ? pref : ".";
     SDL_free(pref);
-    return base / (emulator_.rom().sha256_hex() + ".el99state");
+    return base / (emulator_.rom().sha256_hex() + "." + std::string(emulator_.state_format()));
 #endif
 }
 

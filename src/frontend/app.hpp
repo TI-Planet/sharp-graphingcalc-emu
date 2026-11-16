@@ -1,6 +1,6 @@
 #pragma once
 
-#include "el9950/emulator.hpp"
+#include "sharp/machine.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -47,12 +47,12 @@ private:
     SDL_Texture* skin_texture_{};
     std::string skin_image_;
     SDL_Texture* lcd_texture_{};
-    el9950::Emulator emulator_;
+    sharp::Emulator emulator_;
     bool running_{true};
     bool emulation_running_{true};
     bool turbo_{};
     bool show_debugger_{true};
-    std::string status_{"Drop a raw 1 MiB ROM to begin"};
+    std::string status_{"Drop an EL-99xx or EL-9200/9300 ROM to begin"};
     std::filesystem::path rom_path_;
     std::filesystem::path state_path_;
     std::uint64_t last_frame_ns_{};

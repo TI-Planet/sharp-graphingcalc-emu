@@ -1,12 +1,54 @@
-# Sharp EL-99xx Emulator
+# Sharp Graphing Calculator Emulator
 
-An experimental Sharp EL-9900, EL-9900G, EL-9900G SII and EL-9950 emulator. The project has a deterministic C++20 core shared by native SDL3 and WebAssembly frontends and is licensed under BSD-3-Clause. ROM images are supplied separately by users.
+An experimental Sharp calculator emulator with separate **TLCS-900/L1 (EL-99xx)** and **SC62015 (EL-9200/9300)** hardware backends. The deterministic C++20 machines share native SDL3, WebAssembly and headless frontends. The combined application is distributed under GPLv2; existing BSD code retains its license and notices in `LICENSE.BSD`. ROM images are supplied separately by users.
 
 > **Current status:** early hardware bring-up. The known 1.20 firmware boots through its real first-use initialization flow and reaches the calculation screen. Its complete visible keyboard matrix is verified against the ROM translation table; several other peripherals still need verification. See [Implementation status](#implementation-status) before reporting behavior as fully emulated.
 
+### EL-9300 / SC62015
+
+The supplied **EL-9300 1.11** dump is automatically selected by its 256 KiB size
+and diagnostic banner. SHA-256:
+
+```
+050375c45a00db09fd77008a4de3ca02b8bc0c0af06f8593f886f143859f6c86
+```
+
+It executes the real reset code, displays the complete 96×64 initialization
+prompt, accepts **CL**, then **ENTER** at `PRESS ANY KEY`, reaches `REAL MODE`,
+and evaluates `1+2` to `3`. The LCD's two controllers cover the upper and lower
+halves; column and page orientation come from the firmware's drawing routines.
+The current frontend uses a button panel for this family. Digits, arithmetic,
+parentheses, ENTER, CL, editing, cursor and several function/mode keys are mapped;
+unmapped positions can be exercised through the headless raw matrix commands.
+
+The backend has its own 20-bit bus, immutable ROM at `C0000–FFFFF`, RAM ending
+at `1FFFF`, separate 256-byte CPU internal RAM/I/O, interrupt/wake-up handling,
+disassembler and CRC/ROM-keyed `.el93state` snapshots. EL-9200 selects an 8 KiB
+RAM profile; **only the supplied EL-9300 ROM has been exercised**. Unknown
+256 KiB images use the experimental SC62015/32 KiB profile. EL-9400/9600 support
+is not implemented by this change.
+
+Remaining work includes the separate LCD indicators, the remaining function
+key labels, physical validation, link/UART wiring, and accurate clock, timers,
+power and wait-state behavior. The provisional 2.304 MHz oscillator corresponds
+to 768,000 CPU execution states per second; SC62015 `run` budgets count those
+states. See [`config/el9300.json`](config/el9300.json) for evidence and assumptions.
+
+```sh
+./build/el9950-headless /path/to/EL-9300.bin 1000000 --json
+EL9300_ROM=/path/to/EL-9300.bin ./build/sharp-machine-tests
+```
+
+The optional ROM test completes initialization and checks the actual `1+2=3`
+screen and deterministic snapshot continuation. ROM-free tests cover both
+backends, CPU addressing/flags/stacks/interrupts, every opcode handler,
+LCD orientation, matrix strobes and state compatibility/rejection.
+
 ## ROM
 
-Supply a raw, exactly 1 MiB (`0x100000` byte) ROM image. The known EL-9950 1.20 dump is recognized by SHA-256:
+Supply a raw 1 MiB (`0x100000` byte) EL-99xx ROM or a 256 KiB (`0x40000` byte)
+EL-9200/9300 ROM. The following identification details concern EL-99xx.
+The known EL-9950 1.20 dump is recognized by SHA-256:
 
 ```
 deae0913c635b02e5b273db20905fa57993ec035edb7cbf78f08f9bc79f42082
@@ -84,7 +126,12 @@ For a persistent agent session, start `el9950-headless ROM.bin --control`. It wr
 {"id":"11","command":"quit"}
 ```
 
-`screenshot` returns the 132x64 LCD as a base64 PGM image; `state.dump` returns the complete versioned `.el99state` payload as base64. IDs are optional strings echoed for request/response correlation. Protocol data stays on stdout; fatal startup errors and usage go to stderr.
+`screenshot` returns a base64 PGM image at the selected machine's dimensions
+(132×64 or 96×64); `state.dump` reports its `el99state` or `el93state` format.
+Status adds machine/CPU identifiers, physical/scheduler frequencies and named
+CPU registers. Existing protocol-v1 fields and EL-99xx snapshots remain compatible.
+IDs are optional strings echoed for request/response correlation. Protocol data
+stays on stdout; fatal startup errors and usage go to stderr.
 
 ### Native macOS application
 
@@ -138,6 +185,9 @@ alongside `index.html`, `index.js` and `index.wasm`; no `index.data` bundle is n
 
 ## Architecture
 
+- `include/sharp/machine.hpp`, `src/machine.cpp`: family-neutral session and complete-machine interface; ROM loading constructs a replacement backend before switching. EL-99xx is adapted without changing its existing implementation or snapshot bytes.
+- `src/el9300.cpp`, `include/sharp/sc62015.hpp`: SC62015 CPU integration and independent EL-9200/9300 board. Devices and CPU state are owned by each machine, never attached to another family's bus.
+- `third_party/pockemul-sc62015/`: GPLv2 instruction engine extracted from a pinned PockEmul revision, without Qt or PC-E500 hardware dependencies.
 - `include/el9950/`, `src/`: platform-independent CPU, bus and devices.
 - `third_party/mame-tlcs900/`: the TLCS-900/H core adapted from the pinned MAME revision documented in `THIRD_PARTY_NOTICES.md`.
 - `src/frontend/`: SDL3 and Dear ImGui frontend shared by native and web builds.
@@ -148,7 +198,8 @@ The stable core surface covers ROM loading, reset/contact reset, cycle execution
 
 ## Implementation status
 
-Implemented and covered by deterministic tests:
+The following details concern the existing EL-99xx backend; SC62015 status is
+described above. Implemented and covered by deterministic tests:
 
 - immutable 1 MiB ROM and AMD-style Flash overlay;
 - standalone TLCS-900/H instruction engine and debugger state;
@@ -173,5 +224,11 @@ The hardware configuration distinguishes tested behavior from provisional assump
 
 Sharp and EL-9950 are trademarks of their respective owner. Their use identifies compatibility only and does not imply endorsement.
 
-This repository's code is under the BSD-3-Clause license.
+The combined application is under GPLv2 (`LICENSE`). Existing BSD code retains
+its original notice (`LICENSE.BSD`). The PockEmul-derived SC62015 engine is GPLv2
+and is not offered under BSD or a BSD/GPL dual license. Native installation
+includes the license and third-party notices. Release distributors must provide
+the corresponding source for their exact build, including any dependency changes;
+the [source repository](https://github.com/TI-Planet/sharp-graphingcalc-emu) and
+pinned dependency revisions are the starting point.
 Third-party source attribution is in `THIRD_PARTY_NOTICES.md`.

@@ -12,6 +12,7 @@ namespace el9950
         std::uint32_t address{};
         std::uint8_t length{};
         std::string text;
+        std::uint32_t next_address{};
     };
 
     DisassemblyLine disassemble(const Bus& bus, std::uint32_t address);

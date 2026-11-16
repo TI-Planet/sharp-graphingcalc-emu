@@ -11,7 +11,8 @@
 
 namespace el9950
 {
-    enum class Model : std::uint8_t { unknown, el9900, el9900g, el9900g_sii, el9950 };
+    enum class Model : std::uint8_t { unknown, el9900, el9900g, el9900g_sii, el9950, el9200, el9300 };
+    enum class HardwareFamily : std::uint8_t { el99xx, el92xx };
     std::string_view model_name(Model model);
     bool has_reversible_keyboard(Model model);
 
@@ -32,6 +33,7 @@ namespace el9950
 
         bool is_known_120() const;
         Model model() const { return model_; }
+        HardwareFamily family() const { return bytes_.size() == 0x40000 ? HardwareFamily::el92xx : HardwareFamily::el99xx; }
         const std::string& version() const { return version_; }
 
     private:

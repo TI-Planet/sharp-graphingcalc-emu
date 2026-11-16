@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "machine": "Sharp EL-9200/9300",
+  "status": "experimental; real EL-9300 1.11 boot, initialization and arithmetic exercised; no physical validation",
+  "cpu": {
+    "family": "SC62015 / ESR-L",
+    "address_space_bits": 20,
+    "internal_space_bytes": 256,
+    "oscillator_hz": 2304000,
+    "execution_states_per_second": 768000,
+    "clock_status": "provisional board clock; three oscillator clocks per CPU state per ESR-L manual",
+    "core": "PockEmul 898c891abb25da94df8951f13a9fc4a0b986c69d instruction engine with standalone integration"
+  },
+  "regions": [
+    {"name":"rom","start":"0xC0000","end":"0xFFFFF","status":"reset and interrupt vectors in supplied dump resolve to real firmware"},
+    {"name":"EL-9300 RAM","start":"0x18000","end":"0x1FFFF","status":"firmware F7349 clears from 18000; reset tests 1FFFD; 32 KiB profile"},
+    {"name":"EL-9200 RAM","start":"0x1E000","end":"0x1FFFF","status":"8 KiB profile only; no EL-9200 dump or hardware tested"},
+    {"name":"lower LCD RAM","start":"0x04000","end":"0x041FF","status":"firmware drawing trace"},
+    {"name":"upper LCD RAM","start":"0x06000","end":"0x061FF","status":"firmware drawing trace"}
+  ],
+  "lcd": {
+    "width": 96,
+    "height": 64,
+    "row_origins": ["0x61DF","0x615F","0x60DF","0x605F","0x41DF","0x415F","0x40DF","0x405F"],
+    "evidence": "F70BC table and F7012-F70BB draw eight rows of 16 six-column glyphs backwards from these origins",
+    "display_enable": "internal FD bit 0",
+    "remaining": "contrast commands at 4300/6300 and eight separate indicators"
+  },
+  "keyboard": {
+    "outputs":16,
+    "inputs":8,
+    "polarity":"high-active",
+    "output_registers":["internal F0","internal F1"],
+    "input_register":"internal F2",
+    "translation_table":"F8378; row*8+input index, F8808-F8828",
+    "clear_key":{"output":6,"input":2,"evidence":"F7324-F733E independently isolates CL"},
+    "status":"named common controls and mode/menu controls implemented; remaining positions exposed as raw matrix"
+  },
+  "battery": {
+    "backup_input":"internal F5 bit 4; F6F28/F6F31 test healthy state",
+    "operating_low_voltage":"not modeled"
+  },
+  "unverified":["EL-9200 operation","exact timer rates and clock","power behavior and reset retention","wait states","address-modification hardware","UART/link","LCD indicators"],
+  "roms":[{"model":"EL-9300","version":"1.11","size":262144,"sha256":"050375c45a00db09fd77008a4de3ca02b8bc0c0af06f8593f886f143859f6c86","distributed":false}],
+  "references":[
+    "https://basic.hopto.org/basic/manual/Sharp%20PC-E500%20CPU%20Tech%20Reference.pdf",
+    "https://manualmachine.com/sharp/el9200/1195508-owner-manual/"
+  ]
+}

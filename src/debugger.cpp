@@ -1,9 +1,11 @@
 #include "el9950/debugger.hpp"
 #include "el9950/bus.hpp"
+#include "el9950/constants.hpp"
 
 #include "emu.h"
 #include "dasm900.h"
 
+#include <algorithm>
 #include <array>
 #include <sstream>
 
@@ -17,6 +19,7 @@ namespace el9950
         tlcs900_disassembler disassembler;
         std::ostringstream text;
         const auto result = disassembler.disassemble(text, address, buffer, buffer);
-        return {address, static_cast<std::uint8_t>(result & util::disasm_interface::LENGTHMASK), text.str()};
+        const auto length = static_cast<std::uint8_t>(result & util::disasm_interface::LENGTHMASK);
+        return {address, length, text.str(), (address + std::max<unsigned>(1, length)) & kAddressMask};
     }
 } // namespace el9950

@@ -11,18 +11,18 @@ namespace el9950
         if (!input)
             throw std::runtime_error("cannot open ROM: " + path.string());
         const auto size = input.tellg();
-        if (size != static_cast<std::streamoff>(kFlashSize))
-            throw std::runtime_error("raw Sharp EL-99xx ROM must be exactly 0x100000 bytes");
+        if (size != static_cast<std::streamoff>(kFlashSize) && size != 0x40000)
+            throw std::runtime_error("raw Sharp ROM must be 0x100000 (EL-99xx) or 0x40000 (EL-9200/9300) bytes");
         input.seekg(0);
-        std::vector<std::uint8_t> bytes(kFlashSize);
+        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
         if (!input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
             throw std::runtime_error("failed to read complete ROM: " + path.string());
         return from_bytes(std::move(bytes));
     }
 
     RomImage RomImage::from_bytes(std::vector<std::uint8_t> bytes) {
-        if (bytes.size() != kFlashSize)
-            throw std::runtime_error("raw Sharp EL-99xx ROM must be exactly 0x100000 bytes");
+        if (bytes.size() != kFlashSize && bytes.size() != 0x40000)
+            throw std::runtime_error("raw Sharp ROM must be 0x100000 (EL-99xx) or 0x40000 (EL-9200/9300) bytes");
         RomImage result;
         result.bytes_ = std::move(bytes);
         result.digest_ = sha256(result.bytes_);
@@ -37,6 +37,8 @@ namespace el9950
         case Model::el9900g: return "EL-9900G";
         case Model::el9900g_sii: return "EL-9900G SII";
         case Model::el9950: return "EL-9950";
+        case Model::el9200: return "EL-9200";
+        case Model::el9300: return "EL-9300";
         default: return "Unknown Sharp EL-99xx";
         }
     }
@@ -46,6 +48,25 @@ namespace el9950
     }
 
     void RomImage::identify() {
+        if (family() == HardwareFamily::el92xx) {
+            const std::string_view data(reinterpret_cast<const char*>(bytes_.data()), bytes_.size());
+            for (const auto model : {Model::el9200, Model::el9300}) {
+                const auto banner = model == Model::el9200 ? "EL 9200" : "EL 9300";
+                const auto position = data.find(banner);
+                if (position == std::string_view::npos) continue;
+                const auto diagnostic = data.substr(position, 48);
+                const auto ver = diagnostic.find("Ver.");
+                if (ver == std::string_view::npos) continue;
+                const auto digit = diagnostic.find_first_of("0123456789", ver + 4);
+                if (digit == std::string_view::npos || digit + 4 > diagnostic.size()) continue;
+                const auto version = diagnostic.substr(digit, 4);
+                if (version[1] != '.' || version[2] < '0' || version[2] > '9' || version[3] < '0' || version[3] > '9') continue;
+                model_ = model;
+                version_ = version;
+                return;
+            }
+            return;
+        }
         // The diagnostic routine at F35810 loads its model banner into XHL,
         // then prints the major byte and packed-BCD minor byte at FFBFE4/E5.
         // Generic EL-9900/9950 strings elsewhere are shared between models.

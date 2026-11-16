@@ -12,6 +12,10 @@ option(EL9950_FETCH_FRONTEND_DEPS "Fetch pinned SDL3/ImGui dependencies" ON)
 add_library(el9950_core
   src/bus.cpp
   src/cpu_tlcs900.cpp
+  src/cpu_sc62015.cpp
+  src/sc62015_disassembler.cpp
+  src/machine.cpp
+  src/el9300.cpp
   src/crc32.cpp
   src/debugger.cpp
   src/emulator.cpp
@@ -25,10 +29,11 @@ add_library(el9950_core
   src/tmp91c025.cpp
   third_party/mame-tlcs900/tlcs900.cpp
   third_party/mame-tlcs900/dasm900.cpp
+  third_party/pockemul-sc62015/sc62015.cpp
 )
 target_include_directories(el9950_core
   PUBLIC include
-  PRIVATE third_party/mame-tlcs900
+  PRIVATE third_party/mame-tlcs900 third_party/pockemul-sc62015
 )
 target_compile_definitions(el9950_core PRIVATE EL9950_STANDALONE_MAME_CORE=1)
 if(MSVC)
@@ -87,7 +92,7 @@ if(EL9950_BUILD_FRONTEND)
     target_compile_definitions(el9950-emu PRIVATE EL9950_BUNDLE_SKIN=1)
     set_target_properties(el9950-emu PROPERTIES
       MACOSX_BUNDLE TRUE
-      MACOSX_BUNDLE_BUNDLE_NAME "EL-9950 Emulator"
+      MACOSX_BUNDLE_BUNDLE_NAME "Sharp Graphing Calculator Emulator"
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
       MACOSX_BUNDLE_GUI_IDENTIFIER "org.tiplanet.el9950-emu"
@@ -107,6 +112,8 @@ if(EL9950_BUILD_FRONTEND)
     BUNDLE DESTINATION .
     RUNTIME DESTINATION .
   )
+  install(FILES LICENSE LICENSE.BSD THIRD_PARTY_NOTICES.md DESTINATION .)
+  install(FILES third_party/pockemul-sc62015/COPYING DESTINATION licenses RENAME PockEmul-COPYING)
   if(NOT APPLE AND NOT EMSCRIPTEN)
     install(FILES ${EL9950_SKINS} DESTINATION assets)
   endif()
@@ -117,4 +124,14 @@ if(EL9950_BUILD_TESTS)
   add_executable(el9950-tests tests/tests.cpp)
   target_link_libraries(el9950-tests PRIVATE el9950_core)
   add_test(NAME el9950-tests COMMAND el9950-tests)
+  add_executable(sharp-machine-tests tests/machines.cpp)
+  target_link_libraries(sharp-machine-tests PRIVATE el9950_core)
+  add_test(NAME sharp-machine-tests COMMAND sharp-machine-tests)
+  if(NOT CMAKE_CROSSCOMPILING)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+      add_test(NAME sharp-headless-protocol
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/headless.py" "$<TARGET_FILE:el9950-headless>")
+    endif()
+  endif()
 endif()

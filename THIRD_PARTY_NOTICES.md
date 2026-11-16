@@ -1,5 +1,19 @@
 # Third-party notices
 
+## PockEmul SC62015 instruction engine
+
+Files in `third_party/pockemul-sc62015/` are adapted from PockEmul revision
+`898c891abb25da94df8951f13a9fc4a0b986c69d`.
+
+- Copyright Matsumo, 1998–1999, and PockEmul contributors.
+- License: GNU GPL version 2; see that directory's `COPYING` and `README.md`.
+- Source: <https://github.com/matsumo/PockEmul/tree/898c891abb25da94df8951f13a9fc4a0b986c69d/src/cpu>
+
+The combined emulator is distributed under GPLv2 (`LICENSE`). Existing BSD
+code and its copyright notice remain covered by `LICENSE.BSD`; other bundled
+components retain their individual licenses below. The SC62015 component is
+not offered under BSD or a BSD/GPL dual license.
+
 ## MAME TLCS-900/H CPU core and disassembler
 
 Files in `third_party/mame-tlcs900/` are adapted from MAME revision

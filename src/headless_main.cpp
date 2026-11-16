@@ -1,4 +1,4 @@
-#include "el9950/emulator.hpp"
+#include "sharp/machine.hpp"
 #include "el9950/debugger.hpp"
 #include "el9950/sha256.hpp"
 
@@ -264,8 +264,23 @@ namespace
         return result;
     }
 
+    std::string machine_fields(const sharp::Emulator& emulator) {
+        const auto info = emulator.info();
+        std::string result = ",\"machine\":" + json_string(info.id) + ",\"cpu\":" + json_string(info.cpu) +
+            ",\"clock_hz\":" + std::to_string(info.clock_hz) + ",\"cycle_hz\":" + std::to_string(info.cycles_per_second) + ",\"address_bits\":" + (info.address_mask == 0xfffff ? "20" : "24") +
+            ",\"experimental\":" + (info.experimental ? "true" : "false") +
+            ",\"width\":" + std::to_string(info.lcd_width) + ",\"height\":" + std::to_string(info.lcd_height) + ",\"registers\":{";
+        bool first = true;
+        for (const auto& reg : emulator.cpu_state().registers) {
+            if (!first) result += ',';
+            first = false;
+            result += json_string(reg.name) + ':' + std::to_string(reg.value);
+        }
+        return result + "}";
+    }
+
     std::string status_response(
-        const el9950::Emulator& emulator, std::string_view request, std::string_view command,
+        const sharp::Emulator& emulator, std::string_view request, std::string_view command,
         std::optional<std::uint64_t> executed = std::nullopt) {
         const auto cpu = emulator.cpu_state();
         const auto& fb = emulator.framebuffer();
@@ -283,19 +298,15 @@ namespace
             ",\"keyboard_side\":" + json_string(emulator.keyboard_side() == el9950::KeyboardSide::basic ? "basic" : "advanced") +
             ",\"pressed_mask\":" + std::to_string(emulator.keyboard().pressed_mask()) +
             ",\"framebuffer_sha256\":" + json_string(el9950::hex_sha256(el9950::sha256(std::span(fb)))) + "}";
+        result.insert(result.size() - 1, machine_fields(emulator));
         return result;
     }
 
-    void set_keys(el9950::Emulator& emulator, const std::vector<std::string>& ids, bool pressed) {
-        for (const auto& id : ids) {
-            const auto key = el9950::Keyboard::from_id(id);
-            if (!key)
-                throw std::runtime_error("unknown key id: " + id);
-            emulator.set_key(*key, pressed);
-        }
+    void set_keys(sharp::Emulator& emulator, const std::vector<std::string>& ids, bool pressed) {
+        for (const auto& id : ids) emulator.set_key(id, pressed);
     }
 
-    void control_loop(el9950::Emulator& emulator) {
+    void control_loop(sharp::Emulator& emulator) {
         std::cout << "{\"event\":\"ready\",\"protocol\":\"el9950-headless\",\"version\":1,\"rom_sha256\":"
             << json_string(emulator.rom().sha256_hex()) << ",\"known_1_20\":"
             << (emulator.known_rom() ? "true" : "false") << "}\n" << std::flush;
@@ -325,6 +336,23 @@ namespace
                     set_keys(emulator, json_string_array_field(request, "press"), true);
                     set_keys(emulator, json_string_array_field(request, "release"), false);
                     std::cout << status_response(emulator, request, command);
+                } else if (command == "matrix") {
+                    const auto output = json_integer_field(request, "output").value_or(16);
+                    const auto input = json_integer_field(request, "input").value_or(8);
+                    if (output >= 16 || input >= 8) throw std::runtime_error("matrix requires output 0..15 and input 0..7");
+                    emulator.set_matrix_key(unsigned(output), unsigned(input), json_boolean_field(request, "pressed"));
+                    std::cout << status_response(emulator, request, command);
+                } else if (command == "internal.read" || command == "internal.write") {
+                    const auto address = json_integer_field(request, "address").value_or(256);
+                    if (address > 255) throw std::runtime_error("internal address must be between 0 and 255");
+                    if (command == "internal.write") {
+                        const auto value = json_integer_field(request, "value").value_or(256);
+                        if (value > 255) throw std::runtime_error("internal value must be between 0 and 255");
+                        emulator.write_internal8(std::uint8_t(address), std::uint8_t(value));
+                    }
+                    const auto value = emulator.read_internal8(std::uint8_t(address));
+                    std::cout << response_prefix(request, command, true) << ",\"address\":" << address
+                        << ",\"value\":" << unsigned(value) << '}';
                 } else if (command == "reset") {
                     const auto action = json_string_field(request, "action").value_or("pulse");
                     if (action == "open")
@@ -368,16 +396,17 @@ namespace
                     std::cout << status_response(emulator, request, command);
                 } else if (command == "screenshot") {
                     const auto& fb = emulator.framebuffer();
-                    const std::string header = "P5\n132 64\n255\n";
+                    const auto display = emulator.info();
+                    const std::string header = "P5\n" + std::to_string(display.lcd_width) + " " + std::to_string(display.lcd_height) + "\n255\n";
                     std::vector<std::uint8_t> pgm(header.begin(), header.end());
                     pgm.reserve(header.size() + fb.size());
                     for (const auto pixel : fb)
                         pgm.push_back(pixel ? 0x18 : 0xb9);
                     std::cout << response_prefix(request, command, true) << ",\"mime_type\":\"image/x-portable-graymap\""
-                        << ",\"width\":132,\"height\":64,\"data_base64\":" << json_string(base64_encode(pgm)) << '}';
+                        << ",\"width\":" << display.lcd_width << ",\"height\":" << display.lcd_height << ",\"data_base64\":" << json_string(base64_encode(pgm)) << '}';
                 } else if (command == "state.dump") {
                     const auto state = emulator.save_state();
-                    std::cout << response_prefix(request, command, true) << ",\"format\":\"el99state\",\"data_base64\":"
+                    std::cout << response_prefix(request, command, true) << ",\"format\":" << json_string(emulator.state_format()) << ",\"data_base64\":"
                         << json_string(base64_encode(state)) << '}';
                 } else if (command == "state.load") {
                     const auto encoded = json_string_field(request, "data_base64");
@@ -389,19 +418,19 @@ namespace
                 } else if (command == "memory.read") {
                     const auto address = json_integer_field(request, "address").value_or(0);
                     const auto length = json_integer_field(request, "length").value_or(1);
-                    if (address > 0xffffff || length > 65536 || length > 0x1000000ULL - address)
+                    if (address > emulator.info().address_mask || length > 65536 || length > std::uint64_t(emulator.info().address_mask) + 1 - address)
                         throw std::runtime_error("memory.read range is too large");
                     std::vector<std::uint8_t> data(static_cast<std::size_t>(length));
                     for (std::size_t index = 0; index < data.size(); ++index)
-                        data[index] = emulator.bus().peek8(static_cast<std::uint32_t>(address + index));
+                        data[index] = emulator.peek8(static_cast<std::uint32_t>(address + index));
                     std::cout << response_prefix(request, command, true) << ",\"address\":" << address << ",\"length\":" << length
                         << ",\"data_base64\":" << json_string(base64_encode(data)) << '}';
                 } else if (command == "memory.write") {
                     const auto address = json_integer_field(request, "address").value_or(0);
                     const auto value = json_integer_field(request, "value").value_or(0);
-                    if (address > 0xffffff || value > 0xff)
+                    if (address > emulator.info().address_mask || value > 0xff)
                         throw std::runtime_error("memory.write address or value is out of range");
-                    emulator.bus().write8(static_cast<std::uint32_t>(address), static_cast<std::uint8_t>(value));
+                    emulator.write8(static_cast<std::uint32_t>(address), static_cast<std::uint8_t>(value));
                     std::cout << response_prefix(request, command, true) << ",\"address\":" << address << ",\"value\":" << value << '}';
                 } else if (command == "disassemble") {
                     auto address = static_cast<std::uint32_t>(json_integer_field(request, "address").value_or(emulator.cpu_state().pc));
@@ -410,12 +439,12 @@ namespace
                         throw std::runtime_error("disassembly count is too large");
                     std::cout << response_prefix(request, command, true) << ",\"lines\":[";
                     for (std::uint64_t index = 0; index < count; ++index) {
-                        const auto line = el9950::disassemble(emulator.bus(), address);
+                        const auto line = emulator.disassemble(address);
                         if (index)
                             std::cout << ',';
                         std::cout << "{\"address\":" << line.address << ",\"length\":" << unsigned(line.length)
                             << ",\"text\":" << json_string(line.text) << '}';
-                        address += std::max<std::uint8_t>(line.length, 1);
+                        address = line.next_address;
                     }
                     std::cout << "]}";
                 } else if (command == "quit") {
@@ -451,7 +480,7 @@ try {
             "  --disasm ADDRESS COUNT append disassembly (included in JSON mode)\n";
         return 2;
     }
-    el9950::Emulator emulator;
+    sharp::Emulator emulator;
     emulator.load_rom(argv[1]);
     std::uint64_t requested = 0;
     bool until_halt = false;
@@ -474,7 +503,7 @@ try {
                     trace << "{\"schema\":1,\"cycle\":" << cycle
                         << ",\"kind\":\"" << (write ? "write8" : "read8")
                         << "\",\"pc\":" << emulator.cpu_state().pc
-                        << "\",\"address\":" << address
+                        << ",\"address\":" << address
                         << ",\"value\":" << unsigned(value) << "}\n";
                 });
         } else if (std::string_view(argv[argument]) == "--json") {
@@ -490,10 +519,7 @@ try {
             const bool pressed = std::string_view(argv[argument]) == "--hold";
             if (++argument >= argc)
                 throw std::runtime_error("key option requires a key id");
-            const auto key = el9950::Keyboard::from_id(argv[argument]);
-            if (!key)
-                throw std::runtime_error("unknown key id: " + std::string(argv[argument]));
-            emulator.set_key(*key, pressed);
+            emulator.set_key(std::string_view(argv[argument]), pressed);
         } else if (std::string_view(argv[argument]) == "--reset") {
             emulator.set_reset_contact(true);
             emulator.set_reset_contact(false);
@@ -558,9 +584,9 @@ try {
     const auto framebuffer_hash = el9950::hex_sha256(el9950::sha256(std::span(fb)));
     std::vector<el9950::DisassemblyLine> lines;
     for (unsigned row = 0; row < disasm_count; ++row) {
-        const auto line = el9950::disassemble(emulator.bus(), disasm_address);
+        const auto line = emulator.disassemble(disasm_address);
         lines.push_back(line);
-        disasm_address += std::max<std::uint8_t>(line.length, 1);
+        disasm_address = line.next_address;
     }
     if (json) {
         std::cout << "{\"schema\":1,\"rom_sha256\":" << json_string(emulator.rom().sha256_hex())
@@ -574,7 +600,7 @@ try {
             << ",\"operating_battery_percent\":" << unsigned(emulator.operating_battery_percent())
             << ",\"backup_battery_healthy\":" << (emulator.backup_battery_healthy() ? "true" : "false")
             << ",\"framebuffer_sha256\":" << json_string(framebuffer_hash)
-            << ",\"disassembly\":[";
+            << machine_fields(emulator) << ",\"disassembly\":[";
         for (std::size_t index = 0; index < lines.size(); ++index) {
             if (index)
                 std::cout << ',';

@@ -2,6 +2,7 @@
 /.cache/
 /.DS_Store
 *.el99state
+*.el93state
 *.flash
 *.bin
 /web/dist/

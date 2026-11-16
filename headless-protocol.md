@@ -28,6 +28,14 @@ All addresses and counters are unsigned decimal JSON integers. Binary payloads u
 
 Returns cycle count, CPU PC/SR/HALT state, reset-contact state, both battery inputs, detected model/version, keyboard side, pressed-key bitmask and framebuffer SHA-256.
 
+Status responses also contain `machine` (`el99xx` or `el92xx`), `cpu`,
+`address_bits`, `width`, `height`, `experimental`, and a named `registers`
+object. `sr` is the TLCS status register or the SC62015 C/Z flags.
+`clock_hz` describes the oscillator; `cycle_hz` describes scheduler units.
+SC62015 budgets count execution states (provisionally 768,000/s at 2.304 MHz).
+These are additive protocol-v1 fields; the executable/protocol name remains
+`el9950-headless` for existing clients.
+
 ```json
 {"id":"1","command":"status"}
 ```
@@ -44,6 +52,14 @@ Runs up to `cycles`. With `until_halt:true`, returns as soon as the CPU enters H
 
 Applies all releases after all presses in one atomic command. IDs are the stable key IDs in `assets/skin.json`. Held keys remain held across later commands and compartment resets until explicitly released, allowing maintenance chords.
 
+For EL-9200/9300, common named mappings currently include `n0`–`n9`, `decimal`,
+`negative`, `enter`, `plus`, `minus`, `multiply`, `divide`, `lparen`, `rparen`,
+`on`, `clear`, `second`, `alpha`, `del`, `backspace`, `sin`, `cos`, `tan`,
+`square`, `log`, `ln`, `sto`, `variable`, cursor directions, `math`, `graph`,
+`prgm`, `stat` and `zoom`. Additional family-specific IDs are `calc`, `setup`,
+`menu`, `quit`, `edit` and `range`. Unsupported logical IDs return an error.
+Mode/menu IDs use raw matrix state, separate from the common `pressed_mask`.
+
 ```json
 {"id":"3","command":"keys","press":["second","variable"],"release":[]}
 {"id":"4","command":"keys","press":[],"release":["second","variable"]}
@@ -56,6 +72,26 @@ Applies all releases after all presses in one atomic command. IDs are the stable
 ```json
 {"id":"5","command":"reset","action":"pulse"}
 ```
+
+### `matrix` / `internal.read` / `internal.write` (SC62015 debugging)
+
+SC62015 has a separate 256-byte internal RAM/I/O address space; it is not
+mapped into external memory. Internal commands access a single byte with
+normal port behavior. Raw matrix coordinates use high-active KO strobes
+(output 0–15) and KI inputs (0–7). Held raw positions persist in `.el93state`.
+These commands return errors on the TLCS backend.
+
+```json
+{"command":"matrix","output":6,"input":2,"pressed":true}
+{"command":"internal.write","address":240,"value":64}
+{"command":"internal.read","address":242}
+{"command":"matrix","output":6,"input":2,"pressed":false}
+```
+
+The example selects CL (KO6/KI2); the internal read returns `4` while held.
+SC62015 I/O trace records use `0x100000 + internal_address` to distinguish
+internal port accesses from the 20-bit external bus. This trace encoding
+does not create an external memory region. Trace cycles are instruction-level.
 
 ### `keyboard`
 
@@ -90,7 +126,9 @@ A reset may be needed for the backup-battery warning checked during boot.
 
 ### `screenshot`
 
-Returns the live 132×64 LCD, not the photographic skin, as a complete binary PGM image (`P5`) in `data_base64`. The response includes `mime_type`, `width` and `height`.
+Returns the live LCD as a complete binary PGM image (`P5`) in `data_base64`.
+The response includes `mime_type`, `width` and `height`: 132×64 for EL-99xx,
+96×64 for EL-9200/9300. Separate SC62015 LCD indicators are not included.
 
 ```json
 {"id":"6","command":"screenshot"}
@@ -100,13 +138,20 @@ Returns the live 132×64 LCD, not the photographic skin, as a complete binary PG
 
 Asserts, clears, or pulses a raw TLCS-900 input line. This is intended for hardware bring-up, debugger clients and automated tests; normal clients should not need it once the corresponding peripheral is modeled.
 
+The SC62015 backend accepts only external IRQ line `0` and latches the
+external-request bit. Board-level input timing remains provisional.
+
 ```json
 {"id":"irq-probe","command":"irq","line":12,"action":"pulse"}
 ```
 
 ### `state.dump` / `state.load`
 
-`state.dump` returns the complete versioned `.el99state` payload in `data_base64`. `state.load` accepts that payload and verifies magic, version, ROM SHA-256 and CRC before applying anything.
+`state.dump` returns the complete versioned payload in `data_base64` and reports
+`format` as `el99state` or `el93state`. `state.load` verifies magic, version,
+ROM SHA-256 and CRC. EL-99xx retains the existing snapshot bytes and older-version
+loading support. SC62015 uses its own format and validates the complete payload
+before applying it. States from another family or ROM are rejected.
 
 ```json
 {"id":"7","command":"state.dump"}
@@ -117,7 +162,9 @@ State dumps can be hundreds of KiB. Controllers must not impose a small line-len
 
 ### `memory.read`
 
-Returns at most 65,536 bytes from the 24-bit address space as base64. Reads are debugger peeks and do not trigger device side effects.
+Returns at most 65,536 bytes from the selected machine's external address
+space as base64 (24-bit TLCS, 20-bit SC62015). Reads are debugger peeks and
+do not trigger device side effects. Out-of-range requests return an error.
 
 ```json
 {"id":"9","command":"memory.read","address":16711680,"length":64}
@@ -134,7 +181,9 @@ effects. This is intended for hardware bring-up and debugger clients.
 
 ### `disassemble`
 
-Returns up to 1,024 decoded TLCS-900/H instructions. If `address` is omitted, disassembly begins at PC; if `count` is omitted, it defaults to 16.
+Returns up to 1,024 instructions decoded by the selected CPU backend. If
+`address` is omitted, disassembly begins at PC; if `count` is omitted, it
+defaults to 16. SC62015 pre-bytes are included with their following instruction.
 
 ```json
 {"id":"10","command":"disassemble","address":16752896,"count":16}
@@ -157,4 +206,5 @@ Command errors do not change the framing and do not kill the session:
 {"ok":false,"command":"keys","id":"bad-key","error":"unknown key id: no_such_key"}
 ```
 
-Startup failures such as an absent, unreadable or non-1-MiB ROM are reported on stderr and exit nonzero before the ready event.
+Startup failures such as an absent, unreadable or unsupported-size ROM are
+reported on stderr and exit nonzero before the ready event.

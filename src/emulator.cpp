@@ -123,6 +123,8 @@ namespace el9950
     }
 
     void Emulator::install_rom(RomImage image) {
+        if (image.family() != HardwareFamily::el99xx)
+            throw std::runtime_error("EL-9200/9300 ROM requires the SC62015 machine backend");
         rom_ = std::move(image);
         keyboard_.reset();
         keyboard_.set_side(KeyboardSide::advanced);
