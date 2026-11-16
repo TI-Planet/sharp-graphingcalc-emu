@@ -3,6 +3,7 @@
 #include "el9950/constants.hpp"
 #include "el9950/debugger.hpp"
 #include "el9950/skin.hpp"
+#include "sharp/el9300.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -159,6 +160,7 @@ bool FrontendApp::update_skin() {
 
 void FrontendApp::clear_inputs() {
     latched_keys_.fill(false);
+    latched_named_keys_.clear();
     key_flash_until_ns_.fill(0);
     release_transient_inputs();
 }
@@ -385,6 +387,21 @@ void FrontendApp::toggle_latched_key(el9950::Key key) {
     status_ = std::string(el9950::Keyboard::name(key, emulator_.keyboard_side())) + (latched_keys_[index] ? " held — right-click again to release" : " released");
 }
 
+void FrontendApp::toggle_latched_key(std::string_view id) {
+    if (const auto common = el9950::Keyboard::from_id(id)) {
+        toggle_latched_key(*common);
+        return;
+    }
+    const std::string key(id);
+    const bool pressed = !latched_named_keys_.contains(key);
+    try {
+        emulator_.set_key(id, pressed);
+        if (pressed) latched_named_keys_.insert(key);
+        else latched_named_keys_.erase(key);
+        status_ = key + (pressed ? " held — right-click again to release" : " released");
+    } catch (const std::exception& e) { status_ = e.what(); }
+}
+
 void FrontendApp::release_transient_inputs() {
     pointer_keys_.clear();
     keyboard_keys_.fill(false);
@@ -542,14 +559,31 @@ void FrontendApp::render_calculator() {
         const float key_width = std::max(48.f, (width - 4 * ImGui::GetStyle().ItemSpacing.x) / 5);
         for (unsigned index = 0; index < std::size(buttons); ++index) {
             if (index % 5) ImGui::SameLine();
-            if (ImGui::Button(buttons[index].label, ImVec2(key_width, 0))) {
-                const std::string_view id = buttons[index].id;
-                const auto common = el9950::Keyboard::from_id(id);
+            const std::string_view id = buttons[index].id;
+            const auto common = el9950::Keyboard::from_id(id);
+            const bool latched = common ? latched_keys_[static_cast<std::size_t>(*common)] :
+                latched_named_keys_.contains(std::string(id));
+            if (latched) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.45f, .29f, .10f, 1));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(.58f, .38f, .13f, 1));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(.65f, .43f, .15f, 1));
+            }
+            const bool clicked = ImGui::Button(buttons[index].label, ImVec2(key_width, 0));
+            const bool right_clicked = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+            if (latched) {
+                ImGui::PopStyleColor(3);
+                const auto corner = ImGui::GetItemRectMax();
+                ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(corner.x - 5.f, ImGui::GetItemRectMin().y + 5.f),
+                    3.f, IM_COL32(255, 183, 77, 255));
+            }
+            if (right_clicked) toggle_latched_key(id);
+            if (clicked) {
                 if (common) pulse(*common);
                 else {
+                    const bool was_pressed = emulator_.key_pressed(id);
                     emulator_.set_key(id, true);
                     emulator_.run_cycles(500'000);
-                    emulator_.set_key(id, false);
+                    if (!was_pressed) emulator_.set_key(id, false);
                 }
             }
         }
@@ -772,6 +806,12 @@ try {
     f.read(reinterpret_cast<char*>(d.data()), n);
     emulator_.load_state(d);
     latched_keys_.fill(false);
+    latched_named_keys_.clear();
+    for (std::size_t index = 0; index < latched_keys_.size(); ++index)
+        latched_keys_[index] = emulator_.keyboard().pressed(static_cast<el9950::Key>(index));
+    if (emulator_.info().id == "el92xx")
+        for (const auto& key : sharp::el9300_extra_keys)
+            if (!el9950::Keyboard::from_id(key.id) && emulator_.key_pressed(key.id)) latched_named_keys_.insert(std::string(key.id));
     pointer_keys_.clear();
     keyboard_keys_.fill(false);
     key_flash_until_ns_.fill(0);

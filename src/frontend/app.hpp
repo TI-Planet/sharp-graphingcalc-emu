@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 class FrontendApp
 {
@@ -35,6 +36,7 @@ private:
     std::optional<el9950::Key> key_at(float x, float y) const;
     void sync_key(el9950::Key key);
     void toggle_latched_key(el9950::Key key);
+    void toggle_latched_key(std::string_view id);
     void release_transient_inputs();
     void keyboard_event(SDL_Keycode code, bool down);
     void pulse(el9950::Key key);
@@ -62,5 +64,6 @@ private:
     std::unordered_map<std::int64_t, el9950::Key> pointer_keys_;
     std::array<bool, static_cast<std::size_t>(el9950::Key::count)> keyboard_keys_{};
     std::array<bool, static_cast<std::size_t>(el9950::Key::count)> latched_keys_{};
+    std::unordered_set<std::string> latched_named_keys_;
     std::array<std::uint64_t, static_cast<std::size_t>(el9950::Key::count)> key_flash_until_ns_{};
 };

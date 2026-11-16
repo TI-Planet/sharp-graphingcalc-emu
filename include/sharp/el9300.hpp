@@ -1,10 +1,20 @@
 #pragma once
 #include "el9950/keyboard.hpp"
+#include <array>
 #include <optional>
 #include <utility>
 
 namespace sharp
 {
+struct El9300ExtraKey
+{
+    std::string_view id;
+    unsigned output, input;
+};
+inline constexpr std::array<El9300ExtraKey, 7> el9300_extra_keys{{
+    {"calc", 9, 6}, {"setup", 6, 5}, {"menu", 7, 6}, {"quit", 7, 5},
+    {"edit", 8, 7}, {"range", 8, 6}, {"zoom", 8, 5}
+}};
 // Electrical positions verified from the 1.11 translation table at F8378.
 // Other model-specific functions remain accessible by raw matrix position.
 inline std::optional<std::pair<unsigned, unsigned>> el9300_key(el9950::Key key)

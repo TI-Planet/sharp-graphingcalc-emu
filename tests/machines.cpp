@@ -300,6 +300,39 @@ void machines_and_states()
     rejects([&] { session.load_state(old_state); });
 }
 
+void held_panel_keys()
+{
+    sharp::Emulator session;
+    check(!session.key_pressed("second"), "unloaded key query");
+    session.load_rom(sc_rom());
+    session.set_key(el9950::Key::second, true);
+    session.set_key("setup", true);
+    session.set_key("calc", true);
+    check(session.key_pressed("second") && session.key_pressed("setup") && session.key_pressed("calc"),
+          "common and panel-only keys can be held together");
+    session.write_internal8(0xf0, 0x40);
+    session.write_internal8(0xf1, 0);
+    check(session.read_internal8(0xf2) == 0xa0, "held 2ndF and SETUP reach the keyboard matrix");
+    session.set_reset_contact(true);
+    session.set_reset_contact(false);
+    check(session.key_pressed("second") && session.key_pressed("setup") && session.key_pressed("calc"),
+          "reset contact preserves held panel chord");
+    const auto held = session.save_state();
+    session.set_key(el9950::Key::second, false);
+    session.set_key("setup", false);
+    session.set_key("calc", false);
+    check(!session.key_pressed("second") && !session.key_pressed("setup") && !session.key_pressed("calc"),
+          "held keys can be released independently");
+    session.load_state(held);
+    check(session.key_pressed("second") && session.key_pressed("setup") && session.key_pressed("calc"),
+          "snapshot restores common and named held keys");
+    rejects([&] { session.key_pressed("invalid-key"); });
+    session.load_rom(tlcs_rom());
+    session.set_key("second", true);
+    check(session.key_pressed("second"), "legacy backend key query");
+    rejects([&] { session.key_pressed("setup"); });
+}
+
 void optional_el9300()
 {
     const auto *path = std::getenv("EL9300_ROM");
@@ -351,6 +384,7 @@ int main()
         cpu_calls_interrupts_and_power();
         opcode_decode_consistency();
         machines_and_states();
+        held_panel_keys();
         optional_el9300();
     }
     catch (const std::exception &e)

@@ -177,7 +177,7 @@ alongside `index.html`, `index.js` and `index.wasm`; no `index.data` bundle is n
 - Shift maps to `2ndF`, `X` maps to `X/theta/T/N`, and Escape maps to `ON`.
 - The reset-compartment contact is modeled as an explicit open/close operation so maintenance chords can remain held while the contact closes.
 - Mouse and multitouch presses are tracked independently for maintenance combinations.
-- Pressed keys are highlighted directly on the skin. Right-clicking a key latches it; right-clicking it again releases it, so multi-key maintenance chords can be assembled before reset.
+- Pressed keys are highlighted on the photographic skin; latched keys on the EL-9200/9300 button panel appear orange. Right-clicking a key latches it; right-clicking it again releases it, so multi-key maintenance chords can be assembled before reset.
 - EL-9900 family ROMs show a **Keyboard** selector above the calculator: choose **Advanced** (default) or **Basic** to flip the keyboard. The skin, hit regions and physical P4.6 input follow the selected side. Press a calculator key to let the firmware detect the flip, then acknowledge its keyboard/mode-change message. The ROM selects its own menus and key translations; no reset is required. EL-9950 has a fixed keyboard.
 - Save states retain the keyboard side. Older states (v4–v6) load with the previous advanced-side default. Loading another ROM starts on Advanced.
 - Headless clients can use `--keyboard-side basic` or `{"command":"keyboard","side":"basic"}`. Key IDs remain electrical-position IDs: for example `sin` presses **Simp** on the basic side.

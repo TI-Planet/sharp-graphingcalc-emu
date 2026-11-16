@@ -56,6 +56,13 @@ class Machine
             throw std::runtime_error("unknown key id: " + std::string(id));
         set_key(*key, pressed);
     }
+    virtual bool key_pressed(std::string_view id) const
+    {
+        const auto key = el9950::Keyboard::from_id(id);
+        if (!key)
+            throw std::runtime_error("unknown key id: " + std::string(id));
+        return keyboard().pressed(*key);
+    }
     virtual void set_matrix_key(unsigned output, unsigned input, bool pressed)
     {
         (void)output;
@@ -130,6 +137,7 @@ class Emulator
             machine_->set_key(key, pressed);
     }
     void set_key(std::string_view id, bool pressed) { machine().set_key_id(id, pressed); }
+    bool key_pressed(std::string_view id) const { return machine_ && machine_->key_pressed(id); }
     void set_matrix_key(unsigned output, unsigned input, bool pressed)
     {
         machine().set_matrix_key(output, input, pressed);

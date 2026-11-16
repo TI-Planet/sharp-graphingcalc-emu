@@ -122,22 +122,25 @@ class El93Machine final : public Machine, private Sc62015Bus
     }
     void set_key_id(std::string_view id, bool pressed) override
     {
-        struct Extra
-        {
-            std::string_view id;
-            unsigned output, input;
-        };
         // Named controls in the owner's-manual keyboard diagram; their codes
         // occupy F8378's mode/menu rows in physical left-to-right order.
-        constexpr Extra extras[]{{"calc", 9, 6}, {"setup", 6, 5}, {"menu", 7, 6}, {"quit", 7, 5},
-                                 {"edit", 8, 7}, {"range", 8, 6}, {"zoom", 8, 5}};
-        for (const auto &key : extras)
+        for (const auto &key : el9300_extra_keys)
             if (key.id == id)
             {
                 set_matrix_key(key.output, key.input, pressed);
                 return;
             }
         Machine::set_key_id(id, pressed);
+    }
+    bool key_pressed(std::string_view id) const override
+    {
+        for (const auto &key : el9300_extra_keys)
+            if (key.id == id)
+            {
+                const auto common = el9950::Keyboard::from_id(id);
+                return (matrix_[key.output] & (1U << key.input)) || (common && keyboard_.pressed(*common));
+            }
+        return Machine::key_pressed(id);
     }
     std::uint8_t read_internal8(std::uint8_t address) const override { return cpu_.read_internal(address); }
     void write_internal8(std::uint8_t address, std::uint8_t value) override { cpu_.write_internal(address, value); }
