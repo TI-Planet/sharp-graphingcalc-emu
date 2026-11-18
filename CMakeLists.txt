@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(EL9950_BUILD_TESTS "Build deterministic headless tests" ON)
 option(EL9950_BUILD_FRONTEND "Build the SDL3 + Dear ImGui application" ON)
-option(EL9950_FETCH_FRONTEND_DEPS "Fetch pinned SDL3/ImGui dependencies" ON)
+option(EL9950_FETCH_FRONTEND_DEPS "Fetch pinned native frontend dependencies" ON)
 
 add_library(el9950_core
   src/bus.cpp
@@ -46,14 +46,14 @@ add_executable(el9950-headless src/headless_main.cpp)
 target_link_libraries(el9950-headless PRIVATE el9950_core)
 
 set(EL9950_SKINS
-  assets/SHARP_EL-9300.png
-  assets/SHARP_EL-9950G.png
-  assets/SHARP_EL-9900_advanced-keyboard.png
-  assets/SHARP_EL-9900_simple-keyboard.png
-  assets/SHARP_EL-9900G_advanced-keyboard.png
-  assets/SHARP_EL-9900G_simple-keyboard.png
-  assets/SHARP_EL-9900G_SII_advanced-keyboard.png
-  assets/SHARP_EL-9900G_SII_simple-keyboard.png
+  assets/SHARP_EL-9300.webp
+  assets/SHARP_EL-9950G.webp
+  assets/SHARP_EL-9900_advanced-keyboard.webp
+  assets/SHARP_EL-9900_simple-keyboard.webp
+  assets/SHARP_EL-9900G_advanced-keyboard.webp
+  assets/SHARP_EL-9900G_simple-keyboard.webp
+  assets/SHARP_EL-9900G_SII_advanced-keyboard.webp
+  assets/SHARP_EL-9900G_SII_simple-keyboard.webp
 )
 
 if(EL9950_BUILD_FRONTEND)
@@ -61,7 +61,6 @@ if(EL9950_BUILD_FRONTEND)
   add_executable(el9950-emu
     src/frontend/app.cpp
     src/frontend/main.cpp
-    src/frontend/stb_image.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -69,14 +68,16 @@ if(EL9950_BUILD_FRONTEND)
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
   )
-  target_include_directories(el9950-emu PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends third_party/stb)
-  target_link_libraries(el9950-emu PRIVATE el9950_core SDL3::SDL3)
+  target_include_directories(el9950-emu PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+  target_link_libraries(el9950-emu PRIVATE el9950_core SDL3::SDL3 WebP::webpdecoder)
   if(EMSCRIPTEN)
     target_compile_options(el9950-emu PRIVATE -sUSE_SDL=3)
     foreach(skin IN LISTS EL9950_SKINS)
       configure_file("${skin}" "${CMAKE_CURRENT_BINARY_DIR}/${skin}" COPYONLY)
     endforeach()
     configure_file(web/loader.js "${CMAKE_CURRENT_BINARY_DIR}/loader.js" COPYONLY)
+    configure_file(third_party/libwebp/COPYING "${CMAKE_CURRENT_BINARY_DIR}/licenses/libwebp-COPYING" COPYONLY)
+    configure_file(third_party/libwebp/PATENTS "${CMAKE_CURRENT_BINARY_DIR}/licenses/libwebp-PATENTS" COPYONLY)
     set_property(TARGET el9950-emu APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
     set_target_properties(el9950-emu PROPERTIES SUFFIX ".html" OUTPUT_NAME "index")
     target_link_options(el9950-emu PRIVATE
@@ -115,6 +116,8 @@ if(EL9950_BUILD_FRONTEND)
   )
   install(FILES LICENSE LICENSE.BSD THIRD_PARTY_NOTICES.md DESTINATION .)
   install(FILES third_party/pockemul-sc62015/COPYING DESTINATION licenses RENAME PockEmul-COPYING)
+  install(FILES third_party/libwebp/COPYING DESTINATION licenses RENAME libwebp-COPYING)
+  install(FILES third_party/libwebp/PATENTS DESTINATION licenses RENAME libwebp-PATENTS)
   if(NOT APPLE AND NOT EMSCRIPTEN)
     install(FILES ${EL9950_SKINS} DESTINATION assets)
   endif()

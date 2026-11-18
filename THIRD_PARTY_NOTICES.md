@@ -37,9 +37,9 @@ SDL3 is fetched only when the graphical frontend is enabled. Copyright Sam
 Lantinga and contributors. zlib license. Its version is pinned in
 `cmake/Dependencies.cmake`.
 
-## stb_image
+## libwebp
 
-`third_party/stb/stb_image.h` comes from `nothings/stb` revision
-`2c980bb59875b0d32144a71867fbdebb2f77cd20` and is used only for PNG decoding.
-Copyright Sean Barrett and contributors. Dual-licensed public domain or MIT;
-the complete notice is retained in the header.
+The frontend uses the decoder from libwebp 1.6.0 in the default builds.
+Copyright Google Inc. and contributors. BSD-3-Clause license and patent grant
+are in `third_party/libwebp/`.
+Source: <https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz>.

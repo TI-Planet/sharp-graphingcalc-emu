@@ -99,7 +99,9 @@ jobs:
           test -s build-web/index.js
           test -s build-web/index.wasm
           test -s build-web/loader.js
-          for skin in assets/SHARP_EL-*.png; do
+          test -s build-web/licenses/libwebp-COPYING
+          test -s build-web/licenses/libwebp-PATENTS
+          for skin in assets/SHARP_EL-*.webp; do
             test -s "build-web/$skin"
           done
       - name: Configure GitHub Pages
@@ -110,9 +112,10 @@ jobs:
       - name: Stage GitHub Pages site
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          mkdir pages
+          mkdir -p pages/assets
           cp build-web/index.html build-web/index.js build-web/index.wasm build-web/loader.js pages/
-          cp -R build-web/assets pages/
+          cp build-web/assets/SHARP_EL-*.webp pages/assets/
+          cp -R build-web/licenses pages/
           touch pages/.nojekyll
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

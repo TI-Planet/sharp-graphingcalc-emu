@@ -1,5 +1,33 @@
 include(FetchContent)
 
+if(EMSCRIPTEN OR EL9950_FETCH_FRONTEND_DEPS)
+  function(add_webp_decoder)
+    set(BUILD_SHARED_LIBS OFF)
+    foreach(component IN ITEMS ANIM_UTILS CWEBP DWEBP GIF2WEBP IMG2WEBP VWEBP WEBPINFO WEBPMUX LIBWEBPMUX EXTRAS)
+      set(WEBP_BUILD_${component} OFF)
+    endforeach()
+    set(WEBP_USE_THREAD OFF)
+    FetchContent_Declare(libwebp
+      URL https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz
+      URL_HASH SHA256=e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(libwebp)
+    # Build and install only what the emulator uses, including with CMake 3.25.
+    set_property(DIRECTORY "${libwebp_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(webpdecoder SYSTEM INTERFACE "$<BUILD_INTERFACE:${libwebp_SOURCE_DIR}/src>")
+    add_library(WebP::webpdecoder ALIAS webpdecoder)
+  endfunction()
+  add_webp_decoder()
+else()
+  find_package(WebP CONFIG QUIET)
+  if(NOT TARGET WebP::webpdecoder)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(WEBPDECODER REQUIRED IMPORTED_TARGET libwebpdecoder)
+    add_library(WebP::webpdecoder ALIAS PkgConfig::WEBPDECODER)
+  endif()
+endif()
+
 if(EMSCRIPTEN)
   add_library(SDL3::SDL3 INTERFACE IMPORTED)
   FetchContent_Declare(imgui

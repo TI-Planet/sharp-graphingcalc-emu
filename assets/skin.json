@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "image": "SHARP_EL-9950G.png",
+  "image": "SHARP_EL-9950G.webp",
   "image_sha256": "c206e93f7c640e0f53b7b92ff8a38262c7802744f6ba8f449dd68e35851b7623",
   "native_size": [961, 2000],
   "lcd": {"polygon":[[102,151],[864,151],[864,588],[102,588]],"width":132,"height":64},

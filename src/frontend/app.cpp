@@ -19,10 +19,11 @@
 #include <cstdio>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <utility>
 #include <vector>
-#include <stb_image.h>
+#include <webp/decode.h>
 
 namespace
 {
@@ -149,8 +150,13 @@ bool FrontendApp::update_skin() {
 #else
     const std::string directory = "/assets/";
 #endif
-    int width = 0, height = 0, channels = 0;
-    auto* pixels = stbi_load((directory + std::string(skin.image)).c_str(), &width, &height, &channels, 4);
+    std::size_t file_size = 0;
+    const std::unique_ptr<void, decltype(&SDL_free)> file(
+        SDL_LoadFile((directory + std::string(skin.image)).c_str(), &file_size), SDL_free);
+    int width = 0, height = 0;
+    const std::unique_ptr<std::uint8_t, decltype(&WebPFree)> pixels(
+        file ? WebPDecodeRGBA(static_cast<const std::uint8_t*>(file.get()), file_size, &width, &height) : nullptr,
+        WebPFree);
     if (!pixels) {
         status_ = "Cannot load skin: " + std::string(skin.image);
 #ifdef __EMSCRIPTEN__
@@ -159,9 +165,8 @@ bool FrontendApp::update_skin() {
         return false;
     }
     auto* texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
-    const bool loaded = texture && SDL_UpdateTexture(texture, nullptr, pixels, width * 4) &&
+    const bool loaded = texture && SDL_UpdateTexture(texture, nullptr, pixels.get(), width * 4) &&
         SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-    stbi_image_free(pixels);
     if (!loaded) {
         if (texture) SDL_DestroyTexture(texture);
         status_ = "Cannot create skin texture: " + std::string(SDL_GetError());

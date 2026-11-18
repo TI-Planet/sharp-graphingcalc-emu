@@ -63,7 +63,7 @@ accepted with a warning and the fixed EL-9950 skin. Encoded `.sim` files are not
 
 ## Build
 
-Requirements are CMake 3.25+, Ninja or Make, a C++20 compiler, and Git. Native frontend dependencies are pinned and fetched by CMake. No separate SDL or image-loader installation is needed for the default build.
+Requirements are CMake 3.25+, Ninja or Make, C and C++20 compilers, and Git. CMake fetches the pinned SDL3, Dear ImGui, and libwebp sources for the default native build. To build against system libraries, set `EL9950_FETCH_FRONTEND_DEPS=OFF`, install SDL3 and the libwebp decoder development library, and set `imgui_SOURCE_DIR` to a Dear ImGui checkout.
 
 ### Headless core and tests
 
@@ -164,7 +164,7 @@ python3 -m http.server 8765 --directory build-web
 
 Open `http://localhost:8765/` and select a ROM. ROM bytes remain local to the browser. State data uses IndexedDB; persistent ROM retention is not enabled.
 
-The web build downloads keyboard images on demand after a ROM is selected,
+The web build downloads WebP keyboard images on demand after a ROM is selected,
 including the other side only when the keyboard is flipped. Downloaded images
 are reused for the rest of the session. Startup and image downloads show progress
 and offer a retry if a request fails. Host `loader.js` and the `assets/` directory

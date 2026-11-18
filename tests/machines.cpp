@@ -349,7 +349,7 @@ void el9300_skin_keys(sharp::Emulator& emulator, bool real_rom)
         '7', '8', '9', '(', ')', '4', '5', '6', '*', '/',
         '1', '2', '3', '+', '-', '0', '.', '\'', 0x0d,
     };
-    check(skin.image == "SHARP_EL-9300.png" && skin.keys.size() == std::size(codes), "EL-9300 skin selected");
+    check(skin.image == "SHARP_EL-9300.webp" && skin.keys.size() == std::size(codes), "EL-9300 skin selected");
     check(!el9950::skin_key_at(skin, 440, 315) && !el9950::skin_key_at(skin, 627, 795),
           "LCD and gap between arrow keys are not hit regions");
     for (std::size_t index = 0; index < skin.keys.size(); ++index)
