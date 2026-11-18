@@ -5,10 +5,12 @@
 
 #include <span>
 #include <string_view>
+#include <variant>
 
 namespace el9950
 {
-    struct KeyRect { Key key; float x, y, w, h; };
+    using SkinKey = std::variant<Key, std::string_view>;
+    struct KeyRect { SkinKey key; float x, y, w, h; };
     struct Skin {
         std::string_view image;
         float width, height;
@@ -16,5 +18,5 @@ namespace el9950
         std::span<const KeyRect> keys;
     };
     Skin skin_for(Model model, KeyboardSide side);
-    std::optional<Key> skin_key_at(const Skin& skin, float x, float y);
+    std::optional<SkinKey> skin_key_at(const Skin& skin, float x, float y);
 }

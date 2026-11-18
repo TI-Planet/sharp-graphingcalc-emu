@@ -46,6 +46,7 @@ add_executable(el9950-headless src/headless_main.cpp)
 target_link_libraries(el9950-headless PRIVATE el9950_core)
 
 set(EL9950_SKINS
+  assets/SHARP_EL-9300.png
   assets/SHARP_EL-9950G.png
   assets/SHARP_EL-9900_advanced-keyboard.png
   assets/SHARP_EL-9900_simple-keyboard.png

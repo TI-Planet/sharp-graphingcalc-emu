@@ -34,7 +34,7 @@
     "input_register":"internal F2",
     "translation_table":"F8378; row*8+input index, F8808-F8828",
     "clear_key":{"output":6,"input":2,"evidence":"F7324-F733E independently isolates CL"},
-    "status":"named common controls and mode/menu controls implemented; remaining positions exposed as raw matrix"
+    "status":"all 51 EL-9300 matrix keys mapped; ON is on the separate internal FF bit 3 input"
   },
   "battery": {
     "backup_input":"internal F5 bit 4; F6F28/F6F31 test healthy state",

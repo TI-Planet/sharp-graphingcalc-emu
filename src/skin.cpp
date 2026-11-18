@@ -5,6 +5,30 @@ namespace el9950
 {
     namespace
     {
+        constexpr KeyRect hits9300[]{
+            {"calc", 101, 609, 113, 69}, {Key::graph, 248, 609, 110, 69},
+            {Key::prgm, 390, 609, 113, 69}, {Key::stat, 535, 609, 109, 69},
+            {Key::on, 675, 609, 111, 69},
+            {"eqtn", 102, 729, 95, 54}, {"range", 227, 729, 93, 54}, {Key::zoom, 349, 729, 90, 54},
+            {Key::math, 102, 814, 95, 53}, {"menu", 228, 814, 93, 53}, {"quit", 351, 814, 89, 53},
+            {Key::left, 472, 726, 85, 139}, {Key::up, 558, 726, 139, 62},
+            {Key::down, 558, 804, 139, 61}, {Key::right, 699, 727, 85, 138},
+            {Key::second, 102, 897, 95, 54}, {Key::alpha, 228, 897, 94, 54}, {"setup", 351, 897, 89, 54},
+            {Key::del, 469, 897, 89, 54}, {Key::backspace, 586, 897, 87, 54}, {Key::clear, 700, 897, 88, 54},
+            {Key::sin, 102, 984, 95, 51}, {Key::cos, 228, 984, 92, 51}, {Key::tan, 349, 984, 90, 51},
+            {Key::square, 468, 984, 90, 51}, {Key::log, 584, 984, 90, 51}, {Key::ln, 701, 984, 88, 51},
+            {Key::exp, 102, 1066, 95, 52}, {Key::fraction, 228, 1066, 92, 52}, {Key::power, 349, 1066, 90, 52},
+            {"sqrt", 468, 1066, 88, 52}, {Key::sto, 586, 1066, 88, 52}, {Key::variable, 702, 1066, 88, 52},
+            {Key::n7, 101, 1152, 113, 64}, {Key::n8, 249, 1152, 111, 64}, {Key::n9, 393, 1152, 110, 64},
+            {Key::lparen, 536, 1152, 110, 64}, {Key::rparen, 677, 1152, 110, 64},
+            {Key::n4, 101, 1247, 113, 64}, {Key::n5, 249, 1247, 111, 64}, {Key::n6, 393, 1247, 110, 64},
+            {Key::multiply, 536, 1247, 110, 64}, {Key::divide, 677, 1247, 110, 64},
+            {Key::n1, 101, 1342, 113, 64}, {Key::n2, 249, 1342, 111, 64}, {Key::n3, 393, 1342, 110, 64},
+            {Key::plus, 536, 1342, 110, 64}, {Key::minus, 677, 1342, 110, 64},
+            {Key::n0, 101, 1442, 113, 65}, {Key::decimal, 249, 1442, 111, 65}, {Key::negative, 393, 1442, 110, 65},
+            {Key::enter, 536, 1442, 251, 65},
+        };
+
         constexpr std::array<KeyRect, 54> hits9950{
             {
                 {Key::y_equals, 92, 688, 112, 68}, {Key::graph, 227, 688, 111, 68}, {Key::table, 360, 688, 112, 68},
@@ -90,6 +114,8 @@ namespace el9950
         }};
     }
     Skin skin_for(Model model, KeyboardSide side) {
+        if (model == Model::el9300)
+            return {"SHARP_EL-9300.png", 876, 1598, 175, 138, 534, 356, hits9300};
         if (!has_reversible_keyboard(model))
             return {"SHARP_EL-9950G.png", 961, 2000, 102, 151, 762, 437, hits9950};
         std::string_view image;
@@ -105,7 +131,7 @@ namespace el9950
         return {image, 809, 1600, 110, 101, 590, 344, hits9900};
     }
 
-    std::optional<Key> skin_key_at(const Skin& skin, float x, float y) {
+    std::optional<SkinKey> skin_key_at(const Skin& skin, float x, float y) {
         for (const auto& r : skin.keys)
             if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)
                 return r.key;

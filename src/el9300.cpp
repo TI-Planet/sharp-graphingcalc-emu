@@ -122,8 +122,8 @@ class El93Machine final : public Machine, private Sc62015Bus
     }
     void set_key_id(std::string_view id, bool pressed) override
     {
-        // Named controls in the owner's-manual keyboard diagram; their codes
-        // occupy F8378's mode/menu rows in physical left-to-right order.
+        if (id == "edit")
+            id = "eqtn"; // Legacy headless ID for the EQTN key.
         for (const auto &key : el9300_extra_keys)
             if (key.id == id)
             {
@@ -134,6 +134,8 @@ class El93Machine final : public Machine, private Sc62015Bus
     }
     bool key_pressed(std::string_view id) const override
     {
+        if (id == "edit")
+            id = "eqtn";
         for (const auto &key : el9300_extra_keys)
             if (key.id == id)
             {

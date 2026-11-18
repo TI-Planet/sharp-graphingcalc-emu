@@ -11,12 +11,11 @@ struct El9300ExtraKey
     std::string_view id;
     unsigned output, input;
 };
-inline constexpr std::array<El9300ExtraKey, 7> el9300_extra_keys{{
+inline constexpr std::array<El9300ExtraKey, 8> el9300_extra_keys{{
     {"calc", 9, 6}, {"setup", 6, 5}, {"menu", 7, 6}, {"quit", 7, 5},
-    {"edit", 8, 7}, {"range", 8, 6}, {"zoom", 8, 5}
+    {"eqtn", 8, 7}, {"range", 8, 6}, {"zoom", 8, 5}, {"sqrt", 4, 4}
 }};
 // Electrical positions verified from the 1.11 translation table at F8378.
-// Other model-specific functions remain accessible by raw matrix position.
 inline std::optional<std::pair<unsigned, unsigned>> el9300_key(el9950::Key key)
 {
     using K = el9950::Key;
@@ -82,6 +81,12 @@ inline std::optional<std::pair<unsigned, unsigned>> el9300_key(el9950::Key key)
         return {{5, 3}};
     case K::ln:
         return {{5, 2}};
+    case K::exp:
+        return {{4, 7}};
+    case K::fraction:
+        return {{4, 6}};
+    case K::power:
+        return {{4, 5}};
     case K::sto:
         return {{4, 3}};
     case K::variable:

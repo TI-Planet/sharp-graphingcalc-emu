@@ -1,5 +1,6 @@
 #include "el9950/constants.hpp"
 #include "el9950/emulator.hpp"
+#include "el9950/skin.hpp"
 #include "el9950/state.hpp"
 #include "sharp/machine.hpp"
 #include "sharp/sc62015.hpp"
@@ -333,6 +334,58 @@ void held_panel_keys()
     rejects([&] { session.key_pressed("setup"); });
 }
 
+void el9300_skin_keys(sharp::Emulator& emulator, bool real_rom)
+{
+    const auto skin = el9950::skin_for(emulator.rom().model(), emulator.keyboard_side());
+    // F8378 firmware key codes in the same physical order as the skin.
+    // ON is special: it uses the dedicated FF.3 input.
+    constexpr std::uint8_t codes[]{
+        0x70, 0x71, 0x72, 0x73, 0,
+        0x60, 0x61, 0x62, 0x68, 0x69, 0x6a,
+        0x1c, 0x1e, 0x1f, 0x1d,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+        0x40, 0x41, 0x42, 0x43, 0x44, 0x45,
+        0x46, 0x47, 0x48, 0x49, 0x4a, 0x3a,
+        '7', '8', '9', '(', ')', '4', '5', '6', '*', '/',
+        '1', '2', '3', '+', '-', '0', '.', '\'', 0x0d,
+    };
+    check(skin.image == "SHARP_EL-9300.png" && skin.keys.size() == std::size(codes), "EL-9300 skin selected");
+    check(!el9950::skin_key_at(skin, 440, 315) && !el9950::skin_key_at(skin, 627, 795),
+          "LCD and gap between arrow keys are not hit regions");
+    for (std::size_t index = 0; index < skin.keys.size(); ++index)
+    {
+        const auto& rect = skin.keys[index];
+        const auto key = el9950::skin_key_at(skin, rect.x + rect.w / 2, rect.y + rect.h / 2);
+        check(key == rect.key, "EL-9300 keycap center hits the mapped key");
+        const auto set = [&](bool down) {
+            std::visit([&](auto id) { emulator.set_key(id, down); }, *key);
+        };
+        set(true);
+        unsigned contacts = 0;
+        for (unsigned output = 0; output < 16; ++output)
+        {
+            emulator.write_internal8(0xf0, std::uint8_t(1u << output));
+            emulator.write_internal8(0xf1, std::uint8_t((1u << output) >> 8));
+            const auto inputs = emulator.read_internal8(0xf2);
+            for (unsigned input = 0; input < 8; ++input)
+                if (inputs & (1u << input))
+                {
+                    ++contacts;
+                    if (real_rom)
+                        check(emulator.peek8(0xf8378 + output * 8 + input) == codes[index],
+                              "EL-9300 keycap produces its firmware key code");
+                }
+        }
+        check(contacts == (codes[index] ? 1u : 0u), "EL-9300 keycap asserts one matrix contact or dedicated ON");
+        check(bool(emulator.read_internal8(0xff) & 8) == (codes[index] == 0), "EL-9300 dedicated ON input");
+        set(false);
+    }
+    emulator.set_key("edit", true);
+    check(emulator.key_pressed("eqtn"), "legacy edit ID operates EQTN");
+    emulator.set_key("eqtn", false);
+    check(!emulator.key_pressed("edit"), "EQTN releases the legacy edit ID");
+}
+
 void optional_el9300()
 {
     const auto *path = std::getenv("EL9300_ROM");
@@ -373,7 +426,9 @@ void optional_el9300()
     emulator.load_state(state);
     emulator.run_cycles(10000);
     check(emulator.save_state() == next, "real ROM deterministic restore and continuation");
-    std::cout << "EL-9300 1.11 initialization, keyboard and 1+2=3 passed\n";
+    emulator.load_rom(std::filesystem::path(path));
+    el9300_skin_keys(emulator, true);
+    std::cout << "EL-9300 1.11 initialization, 52 skin keys and 1+2=3 passed\n";
 }
 } // namespace
 int main()
@@ -385,6 +440,9 @@ int main()
         opcode_decode_consistency();
         machines_and_states();
         held_panel_keys();
+        sharp::Emulator emulator;
+        emulator.load_rom(sc_rom());
+        el9300_skin_keys(emulator, false);
         optional_el9300();
     }
     catch (const std::exception &e)

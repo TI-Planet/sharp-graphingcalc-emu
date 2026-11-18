@@ -55,10 +55,10 @@ Applies all releases after all presses in one atomic command. IDs are the stable
 For EL-9200/9300, common named mappings currently include `n0`–`n9`, `decimal`,
 `negative`, `enter`, `plus`, `minus`, `multiply`, `divide`, `lparen`, `rparen`,
 `on`, `clear`, `second`, `alpha`, `del`, `backspace`, `sin`, `cos`, `tan`,
-`square`, `log`, `ln`, `sto`, `variable`, cursor directions, `math`, `graph`,
-`prgm`, `stat` and `zoom`. Additional family-specific IDs are `calc`, `setup`,
-`menu`, `quit`, `edit` and `range`. Unsupported logical IDs return an error.
-Mode/menu IDs use raw matrix state, separate from the common `pressed_mask`.
+`square`, `log`, `ln`, `exp`, `fraction`, `power`, `sto`, `variable`, cursor directions,
+`math`, `graph`, `prgm` and `stat`. The IDs `calc`, `setup`, `menu`, `quit`,
+`eqtn`, `range`, `zoom` and `sqrt` use raw matrix state, separate from the
+common `pressed_mask`. The previous ID `edit` is an alias for `eqtn`.
 
 ```json
 {"id":"3","command":"keys","press":["second","variable"],"release":[]}

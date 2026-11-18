@@ -2,7 +2,6 @@
 
 #include "el9950/constants.hpp"
 #include "el9950/debugger.hpp"
-#include "el9950/skin.hpp"
 #include "sharp/el9300.hpp"
 
 #include <imgui.h>
@@ -11,6 +10,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/html5.h>
 #endif
 
 #include <algorithm>
@@ -20,11 +20,14 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 #include <vector>
 #include <stb_image.h>
 
 namespace
 {
+    constexpr float debugger_min_width = 720.f;
+
     std::string hex24(std::uint32_t value) {
         std::ostringstream s;
         s << std::hex << std::uppercase << std::setfill('0') << std::setw(6) << (value & 0xffffff);
@@ -55,9 +58,20 @@ FrontendApp::~FrontendApp() {
 bool FrontendApp::initialize() {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         return false;
-    if (!SDL_CreateWindowAndRenderer("Sharp Graphing Calculator Emulator", 1440, 900,SDL_WINDOW_RESIZABLE, &window_, &renderer_))
+    int width = 1440, height = 900;
+#ifdef __EMSCRIPTEN__
+    double css_width = 0, css_height = 0;
+    if (emscripten_get_element_css_size("#canvas", &css_width, &css_height) == EMSCRIPTEN_RESULT_SUCCESS &&
+        css_width >= 1 && css_height >= 1) {
+        width = static_cast<int>(css_width);
+        height = static_cast<int>(css_height);
+    }
+#endif
+    if (!SDL_CreateWindowAndRenderer("Sharp Graphing Calculator Emulator", width, height, SDL_WINDOW_RESIZABLE, &window_, &renderer_))
         return false;
+#ifndef __EMSCRIPTEN__
     SDL_SetWindowMinimumSize(window_, 960, 640);
+#endif
     SDL_SetRenderVSync(renderer_, 1);
 #ifndef __EMSCRIPTEN__
     if (!update_skin()) return false;
@@ -111,8 +125,11 @@ bool FrontendApp::initialize() {
 }
 
 bool FrontendApp::update_skin() {
-    if (emulator_.has_rom() && emulator_.info().id == "el92xx") { skin_screen_size_ = {}; return true; }
     const auto model = emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown;
+    if (emulator_.info().id == "el92xx" && model != el9950::Model::el9300) {
+        skin_screen_size_ = {};
+        return true;
+    }
     const auto skin = el9950::skin_for(model, emulator_.keyboard_side());
 #ifdef __EMSCRIPTEN__
     // Downloads run outside the ImGui frame. Poll until bytes are in MEMFS;
@@ -124,6 +141,7 @@ bool FrontendApp::update_skin() {
     }
 #endif
     if (skin_image_ == skin.image && skin_texture_) return true;
+    skin_screen_size_ = {};
 #ifdef EL9950_BUNDLE_SKIN
     const std::string directory = std::string(SDL_GetBasePath()) + "../Resources/";
 #elif defined(EL9950_PORTABLE_SKIN)
@@ -339,25 +357,39 @@ void FrontendApp::keyboard_event(SDL_Keycode c, bool down) {
 }
 
 void FrontendApp::set_pointer_key(std::int64_t id, float x, float y, bool down) {
+    const auto sync = [this](const el9950::SkinKey& key) {
+        std::visit([this](auto value) { sync_key(value); }, key);
+    };
     if (!down) {
         if (const auto it = pointer_keys_.find(id); it != pointer_keys_.end()) {
-            const auto key = it->second;
+            const auto [key, start_cycle] = it->second;
+            if (emulation_running_ && emulator_.has_rom() && emulator_.rom().model() == el9950::Model::el9300) {
+                // Rapid clicks and touch taps must stay closed through the ROM's
+                // scan and debounce, even when SDL delivers both edges together.
+                const auto minimum_hold = emulator_.info().cycles_per_second / 10;
+                const auto now = emulator_.cycles();
+                const auto held_cycles = now >= start_cycle ? now - start_cycle : 0;
+                if (held_cycles < minimum_hold) {
+                    try { emulator_.run_cycles(minimum_hold - held_cycles); }
+                    catch (const std::exception& e) { emulation_running_ = false; status_ = e.what(); }
+                }
+            }
             pointer_keys_.erase(it);
-            sync_key(key);
+            sync(key);
         }
         return;
     }
     if (const auto key = key_at(x, y)) {
-        if (*key == el9950::Key::on) {
-            pulse(*key);
+        if (const auto* common = std::get_if<el9950::Key>(&*key); common && *common == el9950::Key::on) {
+            pulse(*common);
             return;
         }
-        pointer_keys_[id] = *key;
-        sync_key(*key);
+        pointer_keys_.insert_or_assign(id, PointerPress{*key, emulator_.cycles()});
+        sync(*key);
     }
 }
 
-std::optional<el9950::Key> FrontendApp::key_at(float x, float y) const {
+std::optional<el9950::SkinKey> FrontendApp::key_at(float x, float y) const {
     if (skin_screen_size_[0] <= 0 || skin_screen_size_[1] <= 0)
         return std::nullopt;
     const auto skin = el9950::skin_for(emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown,
@@ -368,16 +400,19 @@ std::optional<el9950::Key> FrontendApp::key_at(float x, float y) const {
 
 void FrontendApp::sync_key(el9950::Key key) {
     const auto index = static_cast<std::size_t>(key);
-    bool pressed = latched_keys_[index] || keyboard_keys_[index];
-    for (const auto& [pointer,pointer_key] : pointer_keys_) {
-        (void)pointer;
-        if (pointer_key == key) {
-            pressed = true;
-            break;
-        }
-    }
+    const bool pressed = latched_keys_[index] || keyboard_keys_[index] ||
+        std::ranges::any_of(pointer_keys_, [key](const auto& entry) { return entry.second.key == el9950::SkinKey{key}; });
     try { emulator_.set_key(key, pressed); }
     catch (const std::exception& e) { status_ = e.what(); }
+}
+
+void FrontendApp::sync_key(std::string_view id) {
+    const bool pressed = latched_named_keys_.contains(std::string(id)) ||
+        std::ranges::any_of(pointer_keys_, [id](const auto& entry) { return entry.second.key == el9950::SkinKey{id}; });
+    try {
+        if (emulator_.key_pressed(id) != pressed)
+            emulator_.set_key(id, pressed);
+    } catch (const std::exception& e) { status_ = e.what(); }
 }
 
 void FrontendApp::toggle_latched_key(el9950::Key key) {
@@ -393,24 +428,26 @@ void FrontendApp::toggle_latched_key(std::string_view id) {
         return;
     }
     const std::string key(id);
-    const bool pressed = !latched_named_keys_.contains(key);
-    try {
-        emulator_.set_key(id, pressed);
-        if (pressed) latched_named_keys_.insert(key);
-        else latched_named_keys_.erase(key);
-        status_ = key + (pressed ? " held — right-click again to release" : " released");
-    } catch (const std::exception& e) { status_ = e.what(); }
+    const bool latched = !latched_named_keys_.erase(key);
+    if (latched) latched_named_keys_.insert(key);
+    sync_key(id);
+    status_ = key + (latched ? " held — right-click again to release" : " released");
 }
 
 void FrontendApp::release_transient_inputs() {
-    pointer_keys_.clear();
+    const auto released = std::exchange(pointer_keys_, {});
     keyboard_keys_.fill(false);
     for (std::size_t index = 0; index < keyboard_keys_.size(); ++index)
         sync_key(static_cast<el9950::Key>(index));
+    if (emulator_.info().id == "el92xx")
+        for (const auto& entry : released)
+            if (const auto* id = std::get_if<std::string_view>(&entry.second.key))
+                sync_key(*id);
 }
 
 void FrontendApp::render_ui() {
     const auto viewport = ImGui::GetMainViewport();
+    const bool show_debugger = show_debugger_ && viewport->WorkSize.x >= debugger_min_width;
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::Begin("EL-9950 Emulator", nullptr,
@@ -430,13 +467,13 @@ void FrontendApp::render_ui() {
     ImGui::PopStyleColor();
     render_toolbar();
     if (ImGui::BeginChild("workspace", ImVec2(0, -31), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar)) {
-        if (ImGui::BeginTable("workspace-table", show_debugger_ ? 2 : 1, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
+        if (ImGui::BeginTable("workspace-table", show_debugger ? 2 : 1, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
             ImGui::TableSetupColumn("calculator", ImGuiTableColumnFlags_WidthStretch, 0.50f);
-            if (show_debugger_)
+            if (show_debugger)
                 ImGui::TableSetupColumn("debugger", ImGuiTableColumnFlags_WidthStretch, 0.50f);
             ImGui::TableNextColumn();
             render_calculator();
-            if (show_debugger_) {
+            if (show_debugger) {
                 ImGui::TableNextColumn();
                 ImGui::BeginChild("debugger-panel", ImVec2(0, 0), ImGuiChildFlags_Borders);
                 render_debugger();
@@ -459,7 +496,10 @@ void FrontendApp::render_ui() {
 
 void FrontendApp::render_toolbar() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 7));
-    ImGui::BeginChild("toolbar", ImVec2(0, 51), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+    const bool narrow = ImGui::GetContentRegionAvail().x < 900;
+    const float height = 51.f + (narrow ? ImGui::GetStyle().ScrollbarSize : 0.f);
+    ImGui::BeginChild("toolbar", ImVec2(0, height), ImGuiChildFlags_Borders,
+                      narrow ? ImGuiWindowFlags_HorizontalScrollbar : ImGuiWindowFlags_NoScrollbar);
 #ifdef __EMSCRIPTEN__
     if (ImGui::Button("Load ROM"))
         EM_ASM({document.getElementById('rom-picker').click();});
@@ -520,8 +560,10 @@ void FrontendApp::render_toolbar() {
     ImGui::SameLine();
     if (ImGui::Button("Load state") && emulator_.has_rom())
         (void)load_state_file(state_path_);
-    ImGui::SameLine();
-    ImGui::Checkbox("Debugger", &show_debugger_);
+    if (ImGui::GetMainViewport()->WorkSize.x >= debugger_min_width) {
+        ImGui::SameLine();
+        ImGui::Checkbox("Debugger", &show_debugger_);
+    }
     ImGui::EndChild();
     ImGui::PopStyleVar();
 }
@@ -536,7 +578,8 @@ void FrontendApp::pulse(el9950::Key key) {
 }
 
 void FrontendApp::render_calculator() {
-    if (emulator_.has_rom() && emulator_.info().id == "el92xx") {
+    const auto model = emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown;
+    if (emulator_.info().id == "el92xx" && model != el9950::Model::el9300) {
         ImGui::BeginChild("sc62015-calculator", ImVec2(0, 0));
         skin_screen_size_ = {};
         update_lcd_texture();
@@ -546,7 +589,7 @@ void FrontendApp::render_calculator() {
         struct Button { const char* label; const char* id; };
         constexpr Button buttons[]{
             {"CALC","calc"},{"GRAPH","graph"},{"PRGM","prgm"},{"STAT","stat"},{"ON","on"},
-            {"EDIT","edit"},{"RANGE","range"},{"ZOOM","zoom"},{"MATH","math"},{"MENU","menu"},
+            {"EDIT","eqtn"},{"RANGE","range"},{"ZOOM","zoom"},{"MATH","math"},{"MENU","menu"},
             {"QUIT","quit"},{"2ndF","second"},{"ALPHA","alpha"},{"SETUP","setup"},{"CL","clear"},
             {"Up","up"},{"Left","left"},{"Down","down"},{"Right","right"},{"DEL","del"},
             {"sin","sin"},{"cos","cos"},{"tan","tan"},{"log","log"},{"ln","ln"},
@@ -611,15 +654,16 @@ void FrontendApp::render_calculator() {
     }
     const auto avail = ImGui::GetContentRegionAvail();
     const float height = std::max(100.f, avail.y - 4);
-    const auto skin = el9950::skin_for(emulator_.has_rom() ? emulator_.rom().model() : el9950::Model::unknown,
-                                      emulator_.keyboard_side());
-#ifdef __EMSCRIPTEN__
+    const auto skin = el9950::skin_for(model, emulator_.keyboard_side());
     if (skin_image_ != skin.image) {
         skin_screen_size_ = {};
+#ifdef __EMSCRIPTEN__
         ImGui::TextUnformatted("Loading keyboard image...");
+#else
+        ImGui::TextUnformatted("Keyboard image unavailable.");
+#endif
         return;
     }
-#endif
     const float width = height * skin.width / skin.height;
     const float scale = std::min(1.f, avail.x / width);
     const ImVec2 size(width * scale, height * scale);
@@ -629,37 +673,46 @@ void FrontendApp::render_calculator() {
     skin_screen_pos_ = {pos.x, pos.y};
     skin_screen_size_ = {size.x, size.y};
     ImGui::Image((ImTextureID)(intptr_t)skin_texture_, size);
-    update_lcd_texture();
+    update_lcd_texture(model == el9950::Model::el9300);
     auto* draw = ImGui::GetWindowDrawList();
     const ImVec2 a(pos.x + skin.lcd_x / skin.width * size.x, pos.y + skin.lcd_y / skin.height * size.y), b(
                      pos.x + (skin.lcd_x + skin.lcd_w) / skin.width * size.x, pos.y + (skin.lcd_y + skin.lcd_h) / skin.height * size.y);
     draw->AddImage((ImTextureID)(intptr_t)lcd_texture_, a, b);
     const auto now = SDL_GetTicksNS();
     for (const auto& r : skin.keys) {
-        const auto index = static_cast<std::size_t>(r.key);
-        const bool active = emulator_.keyboard().pressed(r.key) || key_flash_until_ns_[index] > now;
-        if (!active && !latched_keys_[index])
+        bool active, latched;
+        if (const auto* key = std::get_if<el9950::Key>(&r.key)) {
+            const auto index = static_cast<std::size_t>(*key);
+            active = emulator_.keyboard().pressed(*key) || key_flash_until_ns_[index] > now;
+            latched = latched_keys_[index];
+        } else {
+            const auto id = std::get<std::string_view>(r.key);
+            active = emulator_.key_pressed(id);
+            latched = latched_named_keys_.contains(std::string(id));
+        }
+        if (!active && !latched)
             continue;
         const ImVec2 ka(pos.x + r.x / skin.width * size.x, pos.y + r.y / skin.height * size.y), kb(
                          pos.x + (r.x + r.w) / skin.width * size.x, pos.y + (r.y + r.h) / skin.height * size.y);
         const float rounding = std::max(2.f, 8.f * size.x / skin.width);
         if (active)
             draw->AddRectFilled(ka, kb,IM_COL32(42, 214, 194, 68), rounding);
-        draw->AddRect(ka, kb, latched_keys_[index] ? IM_COL32(255, 183, 77, 245) : IM_COL32(74, 226, 207, 235), rounding, 0,
-                      latched_keys_[index] ? 3.f : 2.f);
-        if (latched_keys_[index])
+        draw->AddRect(ka, kb, latched ? IM_COL32(255, 183, 77, 245) : IM_COL32(74, 226, 207, 235), rounding, 0,
+                      latched ? 3.f : 2.f);
+        if (latched)
             draw->AddCircleFilled(ImVec2(kb.x - 5.f, kb.y - 5.f), 3.f,IM_COL32(255, 183, 77, 255));
     }
-    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
+    const bool synthetic_touch = model == el9950::Model::el9300 && ImGui::GetIO().MouseSource == ImGuiMouseSource_TouchScreen;
+    if (!synthetic_touch && ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
         set_pointer_key(-1, ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y, true);
     if (ImGui::IsMouseReleased(0))
         set_pointer_key(-1, 0, 0, false);
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1))
         if (const auto key = key_at(ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y))
-            toggle_latched_key(*key);
+            std::visit([this](auto value) { toggle_latched_key(value); }, *key);
 }
 
-void FrontendApp::update_lcd_texture() {
+void FrontendApp::update_lcd_texture(bool transparent_background) {
     const auto display = emulator_.info();
     float width = 0, height = 0;
     if (!lcd_texture_ || !SDL_GetTextureSize(lcd_texture_, &width, &height) || width != display.lcd_width || height != display.lcd_height) {
@@ -667,12 +720,12 @@ void FrontendApp::update_lcd_texture() {
         lcd_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, display.lcd_width, display.lcd_height);
         if (!lcd_texture_) { status_ = SDL_GetError(); return; }
         SDL_SetTextureScaleMode(lcd_texture_, SDL_SCALEMODE_NEAREST);
-        SDL_SetTextureBlendMode(lcd_texture_, SDL_BLENDMODE_NONE);
     }
+    SDL_SetTextureBlendMode(lcd_texture_, transparent_background ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
     std::vector<std::uint32_t> pixels(display.lcd_width * display.lcd_height);
     const auto& fb = emulator_.framebuffer();
     for (std::size_t i = 0; i < pixels.size(); ++i)
-        pixels[i] = fb[i] ? 0x17201bffU : 0xb6c5b8ffU;
+        pixels[i] = fb[i] ? 0x17201bffU : (transparent_background ? 0 : 0xb6c5b8ffU);
     SDL_UpdateTexture(lcd_texture_, nullptr, pixels.data(), display.lcd_width * sizeof(std::uint32_t));
 }
 

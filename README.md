@@ -17,9 +17,9 @@ It executes the real reset code, displays the complete 96×64 initialization
 prompt, accepts **CL**, then **ENTER** at `PRESS ANY KEY`, reaches `REAL MODE`,
 and evaluates `1+2` to `3`. The LCD's two controllers cover the upper and lower
 halves; column and page orientation come from the firmware's drawing routines.
-The current frontend uses a button panel for this family. Digits, arithmetic,
-parentheses, ENTER, CL, editing, cursor and several function/mode keys are mapped;
-unmapped positions can be exercised through the headless raw matrix commands.
+Native and web builds use the EL-9300 skin for identified EL-9300 ROMs, with the
+96×64 LCD and all 52 physical keys mapped. The ROM handles the printed 2ndF and
+ALPHA functions. EL-9200 and unidentified SC62015 ROMs use the button panel.
 
 The backend has its own 20-bit bus, immutable ROM at `C0000–FFFFF`, RAM ending
 at `1FFFF`, separate 256-byte CPU internal RAM/I/O, interrupt/wake-up handling,
@@ -28,8 +28,8 @@ RAM profile; **only the supplied EL-9300 ROM has been exercised**. Unknown
 256 KiB images use the experimental SC62015/32 KiB profile. EL-9400/9600 support
 is not implemented by this change.
 
-Remaining work includes the separate LCD indicators, the remaining function
-key labels, physical validation, link/UART wiring, and accurate clock, timers,
+Remaining work includes the separate LCD indicators, physical validation,
+link/UART wiring, and accurate clock, timers,
 power and wait-state behavior. The provisional 2.304 MHz oscillator corresponds
 to 768,000 CPU execution states per second; SC62015 `run` budgets count those
 states. See [`config/el9300.json`](config/el9300.json) for evidence and assumptions.
@@ -177,7 +177,7 @@ alongside `index.html`, `index.js` and `index.wasm`; no `index.data` bundle is n
 - Shift maps to `2ndF`, `X` maps to `X/theta/T/N`, and Escape maps to `ON`.
 - The reset-compartment contact is modeled as an explicit open/close operation so maintenance chords can remain held while the contact closes.
 - Mouse and multitouch presses are tracked independently for maintenance combinations.
-- Pressed keys are highlighted on the photographic skin; latched keys on the EL-9200/9300 button panel appear orange. Right-clicking a key latches it; right-clicking it again releases it, so multi-key maintenance chords can be assembled before reset.
+- Pressed keys are highlighted on the calculator skin. Right-click a key to latch it in orange, then right-click again to release it. This also works on the SC62015 fallback button panel and lets you hold multi-key chords across reset.
 - EL-9900 family ROMs show a **Keyboard** selector above the calculator: choose **Advanced** (default) or **Basic** to flip the keyboard. The skin, hit regions and physical P4.6 input follow the selected side. Press a calculator key to let the firmware detect the flip, then acknowledge its keyboard/mode-change message. The ROM selects its own menus and key translations; no reset is required. EL-9950 has a fixed keyboard.
 - Save states retain the keyboard side. Older states (v4–v6) load with the previous advanced-side default. Loading another ROM starts on Advanced.
 - Headless clients can use `--keyboard-side basic` or `{"command":"keyboard","side":"basic"}`. Key IDs remain electrical-position IDs: for example `sin` presses **Simp** on the basic side.
