@@ -1,6 +1,6 @@
 #include "app.hpp"
+#include "lcd_image.hpp"
 
-#include "el9950/constants.hpp"
 #include "el9950/debugger.hpp"
 #include "sharp/el9300.hpp"
 
@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iomanip>
@@ -29,11 +30,57 @@ namespace
 {
     constexpr float debugger_min_width = 720.f;
 
+    void draw_sc62015_lcd(ImDrawList* draw, SDL_Texture* texture, const ImVec2& min, const ImVec2& max) {
+        float texture_width, texture_height;
+        if (!SDL_GetTextureSize(texture, &texture_width, &texture_height))
+            return;
+
+        // Fit the entire LCD in device pixels so each dot covers an identical
+        // square, even when the skin itself is drawn at a fractional scale.
+        const auto dpi = ImGui::GetIO().DisplayFramebufferScale;
+        const float left = std::ceil(min.x * dpi.x), top = std::ceil(min.y * dpi.y);
+        const float available_width = std::floor(max.x * dpi.x) - left;
+        const float available_height = std::floor(max.y * dpi.y) - top;
+        constexpr float texels_per_dot = LcdImage::sc62015_texels_per_dot;
+        const float pixels_per_dot = std::floor(texels_per_dot *
+            std::min(available_width / texture_width, available_height / texture_height));
+        const auto id = (ImTextureID)(intptr_t)texture;
+        if (pixels_per_dot < 1.f) {
+            draw->AddImage(id, min, max);
+            return;
+        }
+        const float width = texture_width * pixels_per_dot / texels_per_dot;
+        const float height = texture_height * pixels_per_dot / texels_per_dot;
+        const float x = left + std::floor((available_width - width) * 0.5f);
+        const float y = top + std::floor((available_height - height) * 0.5f);
+        draw->AddImage(id, ImVec2(x / dpi.x, y / dpi.y), ImVec2((x + width) / dpi.x, (y + height) / dpi.y));
+    }
+
     std::string hex24(std::uint32_t value) {
         std::ostringstream s;
         s << std::hex << std::uppercase << std::setfill('0') << std::setw(6) << (value & 0xffffff);
         return s.str();
     }
+
+#ifndef __EMSCRIPTEN__
+    struct ScreenshotDialog {
+        std::vector<std::uint8_t> png;
+        std::promise<std::string> result;
+    };
+
+    void SDLCALL screenshot_path_selected(void* userdata, const char* const* paths, int) {
+        // SDL can call this on another thread, including while the app closes.
+        const std::unique_ptr<ScreenshotDialog> dialog(static_cast<ScreenshotDialog*>(userdata));
+        if (!paths)
+            dialog->result.set_value("Cannot open screenshot save dialog: " + std::string(SDL_GetError()));
+        else if (!paths[0])
+            dialog->result.set_value("Screenshot canceled");
+        else if (!SDL_SaveFile(paths[0], dialog->png.data(), dialog->png.size()))
+            dialog->result.set_value("Cannot save screenshot: " + std::string(SDL_GetError()));
+        else
+            dialog->result.set_value("Screenshot saved to " + std::string(paths[0]));
+    }
+#endif
 }
 
 FrontendApp::FrontendApp() = default;
@@ -68,7 +115,8 @@ bool FrontendApp::initialize() {
         height = static_cast<int>(css_height);
     }
 #endif
-    if (!SDL_CreateWindowAndRenderer("Sharp Graphing Calculator Emulator", width, height, SDL_WINDOW_RESIZABLE, &window_, &renderer_))
+    if (!SDL_CreateWindowAndRenderer("Sharp Graphing Calculator Emulator", width, height,
+                                     SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window_, &renderer_))
         return false;
 #ifndef __EMSCRIPTEN__
     SDL_SetWindowMinimumSize(window_, 960, 640);
@@ -77,10 +125,6 @@ bool FrontendApp::initialize() {
 #ifndef __EMSCRIPTEN__
     if (!update_skin()) return false;
 #endif
-    lcd_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, el9950::kLcdWidth,
-                                     el9950::kLcdHeight);
-    SDL_SetTextureScaleMode(lcd_texture_, SDL_SCALEMODE_NEAREST);
-    SDL_SetTextureBlendMode(lcd_texture_,SDL_BLENDMODE_NONE);
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
@@ -231,6 +275,9 @@ try {
 void FrontendApp::frame() {
 #ifdef __EMSCRIPTEN__
     if (emulator_.has_rom()) update_skin();
+#else
+    if (screenshot_result_.valid() && screenshot_result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+        status_ = screenshot_result_.get();
 #endif
     SDL_Event e;
     while (SDL_PollEvent(&e))
@@ -256,6 +303,8 @@ void FrontendApp::frame() {
     ImGui::NewFrame();
     render_ui();
     ImGui::Render();
+    const auto dpi = ImGui::GetDrawData()->FramebufferScale;
+    SDL_SetRenderScale(renderer_, dpi.x, dpi.y);
     SDL_SetRenderDrawColor(renderer_, 10, 12, 13, 255);
     SDL_RenderClear(renderer_);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer_);
@@ -512,6 +561,15 @@ void FrontendApp::render_toolbar() {
     ImGui::TextDisabled("Drop ROM");
 #endif
     ImGui::SameLine();
+    bool screenshot_available = emulator_.has_rom();
+#ifndef __EMSCRIPTEN__
+    screenshot_available &= !screenshot_result_.valid();
+#endif
+    ImGui::BeginDisabled(!screenshot_available);
+    if (ImGui::Button("Screenshot"))
+        save_screenshot();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
     if (ImGui::Button(emulator_.reset_contact_open() ? "Close reset contact" : "Reset contact")) {
@@ -587,10 +645,16 @@ void FrontendApp::render_calculator() {
     if (emulator_.info().id == "el92xx" && model != el9950::Model::el9300) {
         ImGui::BeginChild("sc62015-calculator", ImVec2(0, 0));
         skin_screen_size_ = {};
-        update_lcd_texture();
         ImGui::TextWrapped("EL-9200/9300 — experimental hardware. Press CL to initialize, then ENTER at PRESS ANY KEY.");
         const auto width = std::min(ImGui::GetContentRegionAvail().x, 576.f);
-        ImGui::Image((ImTextureID)(intptr_t)lcd_texture_, ImVec2(width, width * 64.f / 96.f));
+        if (update_lcd_texture()) {
+            float texture_width, texture_height;
+            SDL_GetTextureSize(lcd_texture_, &texture_width, &texture_height);
+            const auto pos = ImGui::GetCursorScreenPos();
+            const ImVec2 size(width, width * texture_height / texture_width);
+            draw_sc62015_lcd(ImGui::GetWindowDrawList(), lcd_texture_, pos, ImVec2(pos.x + size.x, pos.y + size.y));
+            ImGui::Dummy(size);
+        }
         struct Button { const char* label; const char* id; };
         constexpr Button buttons[]{
             {"CALC","calc"},{"GRAPH","graph"},{"PRGM","prgm"},{"STAT","stat"},{"ON","on"},
@@ -678,11 +742,16 @@ void FrontendApp::render_calculator() {
     skin_screen_pos_ = {pos.x, pos.y};
     skin_screen_size_ = {size.x, size.y};
     ImGui::Image((ImTextureID)(intptr_t)skin_texture_, size);
-    update_lcd_texture(model == el9950::Model::el9300);
     auto* draw = ImGui::GetWindowDrawList();
     const ImVec2 a(pos.x + skin.lcd_x / skin.width * size.x, pos.y + skin.lcd_y / skin.height * size.y), b(
                      pos.x + (skin.lcd_x + skin.lcd_w) / skin.width * size.x, pos.y + (skin.lcd_y + skin.lcd_h) / skin.height * size.y);
-    draw->AddImage((ImTextureID)(intptr_t)lcd_texture_, a, b);
+    const bool sc62015 = model == el9950::Model::el9300;
+    if (update_lcd_texture(sc62015)) {
+        if (sc62015)
+            draw_sc62015_lcd(draw, lcd_texture_, a, b);
+        else
+            draw->AddImage((ImTextureID)(intptr_t)lcd_texture_, a, b);
+    }
     const auto now = SDL_GetTicksNS();
     for (const auto& r : skin.keys) {
         bool active, latched;
@@ -717,22 +786,45 @@ void FrontendApp::render_calculator() {
             std::visit([this](auto value) { toggle_latched_key(value); }, *key);
 }
 
-void FrontendApp::update_lcd_texture(bool transparent_background) {
-    const auto display = emulator_.info();
+bool FrontendApp::update_lcd_texture(bool transparent_background) {
+    const auto image = make_lcd_image(emulator_);
     float width = 0, height = 0;
-    if (!lcd_texture_ || !SDL_GetTextureSize(lcd_texture_, &width, &height) || width != display.lcd_width || height != display.lcd_height) {
+    if (!lcd_texture_ || !SDL_GetTextureSize(lcd_texture_, &width, &height) || width != image.width || height != image.height) {
         if (lcd_texture_) SDL_DestroyTexture(lcd_texture_);
-        lcd_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, display.lcd_width, display.lcd_height);
-        if (!lcd_texture_) { status_ = SDL_GetError(); return; }
+        lcd_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, image.width, image.height);
+        if (!lcd_texture_) { status_ = SDL_GetError(); return false; }
         SDL_SetTextureScaleMode(lcd_texture_, SDL_SCALEMODE_NEAREST);
     }
     SDL_SetTextureBlendMode(lcd_texture_, transparent_background ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
-    std::vector<std::uint32_t> pixels(display.lcd_width * display.lcd_height);
-    const auto& fb = emulator_.framebuffer();
+    std::vector<std::uint32_t> pixels(image.dots.size());
     for (std::size_t i = 0; i < pixels.size(); ++i)
-        pixels[i] = fb[i] ? 0x17201bffU : (transparent_background ? 0 : 0xb6c5b8ffU);
-    SDL_UpdateTexture(lcd_texture_, nullptr, pixels.data(), display.lcd_width * sizeof(std::uint32_t));
+        pixels[i] = image.dots[i] ? LcdImage::foreground : (transparent_background ? 0 : LcdImage::background);
+    if (!SDL_UpdateTexture(lcd_texture_, nullptr, pixels.data(), image.width * sizeof(std::uint32_t))) {
+        status_ = SDL_GetError();
+        return false;
+    }
+    return true;
 }
+
+void FrontendApp::save_screenshot()
+try {
+    auto png = encode_lcd_png(make_lcd_image(emulator_));
+#ifdef __EMSCRIPTEN__
+    const auto model = emulator_.rom().model();
+    const auto filename = model == el9950::Model::unknown ? std::string("Sharp.png")
+        : "Sharp-" + std::string(el9950::model_name(model)) + ".png";
+    EM_ASM({ Module.downloadScreenshot(UTF8ToString($0), HEAPU8.slice($1, $1 + $2)); },
+           filename.c_str(), png.data(), png.size());
+    status_ = "Screenshot downloaded";
+#else
+    auto dialog = std::make_unique<ScreenshotDialog>();
+    dialog->png = std::move(png);
+    screenshot_result_ = dialog->result.get_future();
+    static constexpr SDL_DialogFileFilter filter{"PNG image", "png"};
+    SDL_ShowSaveFileDialog(screenshot_path_selected, dialog.release(), window_, &filter, 1,
+                           SDL_GetUserFolder(SDL_FOLDER_PICTURES));
+#endif
+} catch (const std::exception& e) { status_ = e.what(); }
 
 void FrontendApp::render_debugger() {
     if (!emulator_.has_rom()) { ImGui::TextUnformatted("Load a ROM to inspect its machine."); return; }
@@ -816,7 +908,6 @@ void FrontendApp::render_debugger() {
             const auto info = emulator_.info();
             ImGui::Text("%u x %u", info.lcd_width, info.lcd_height);
             for (const auto& reg : emulator_.device_registers()) ImGui::Text("%s: %u", reg.name.c_str(), reg.value);
-            if (info.experimental) ImGui::TextWrapped("The separate LCD indicators are not yet modeled.");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Link")) {

@@ -7,6 +7,9 @@
 
 #include <array>
 #include <filesystem>
+#ifndef __EMSCRIPTEN__
+#include <future>
+#endif
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -32,7 +35,8 @@ private:
     void render_toolbar();
     void render_calculator();
     void render_debugger();
-    void update_lcd_texture(bool transparent_background = false);
+    bool update_lcd_texture(bool transparent_background = false);
+    void save_screenshot();
     void set_pointer_key(std::int64_t pointer, float x, float y, bool down);
     std::optional<el9950::SkinKey> key_at(float x, float y) const;
     void sync_key(el9950::Key key);
@@ -57,6 +61,9 @@ private:
     bool turbo_{};
     bool show_debugger_{true};
     std::string status_{"Drop an EL-99xx or EL-9200/9300 ROM to begin"};
+#ifndef __EMSCRIPTEN__
+    std::future<std::string> screenshot_result_;
+#endif
     std::filesystem::path rom_path_;
     std::filesystem::path state_path_;
     std::uint64_t last_frame_ns_{};

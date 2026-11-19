@@ -24,7 +24,12 @@
     "row_origins": ["0x61DF","0x615F","0x60DF","0x605F","0x41DF","0x415F","0x40DF","0x405F"],
     "evidence": "F70BC table and F7012-F70BB draw eight rows of 16 six-column glyphs backwards from these origins",
     "display_enable": "internal FD bit 0",
-    "remaining": "contrast commands at 4300/6300 and eight separate indicators"
+    "annunciators": {
+      "0x61E0": {"0":"right","1":"left","2":"2ndF","3":"INS","4":"up"},
+      "0x61E1": {"0":"down","2":"BUSY","3":"ALPHA","4":"BATT"},
+      "evidence": "RootCubed/el_9300_emu identifies left, right, 2ndF, ALPHA and BUSY. The EL-9200 diagnostic photos and EL-9300 1.11 writes at DFC8E–DFCD5 and DFD33–DFD86 support up, down and INS. LCD check alternates 55/AA and AA/55 at 61E0/61E1. F6F68–F6F8E associates bit 4 with the operating batteries. F6F21–F6F62 uses bit 7 for the backup-battery warning."
+    },
+    "remaining": "contrast commands at 4300/6300"
   },
   "keyboard": {
     "outputs":16,
@@ -40,10 +45,12 @@
     "backup_input":"internal F5 bit 4; F6F28/F6F31 test healthy state",
     "operating_low_voltage":"not modeled"
   },
-  "unverified":["EL-9200 operation","exact timer rates and clock","power behavior and reset retention","wait states","address-modification hardware","UART/link","LCD indicators"],
+  "unverified":["EL-9200 operation","exact timer rates and clock","power behavior and reset retention","wait states","address-modification hardware","UART/link","physical LCD segment mapping"],
   "roms":[{"model":"EL-9300","version":"1.11","size":262144,"sha256":"050375c45a00db09fd77008a4de3ca02b8bc0c0af06f8593f886f143859f6c86","distributed":false}],
   "references":[
     "https://basic.hopto.org/basic/manual/Sharp%20PC-E500%20CPU%20Tech%20Reference.pdf",
-    "https://manualmachine.com/sharp/el9200/1195508-owner-manual/"
+    "https://manualmachine.com/sharp/el9200/1195508-owner-manual/",
+    "https://github.com/RootCubed/el_9300_emu/blob/master/src/machine/lcd.hpp",
+    "https://tiplanet.org/forum/viewtopic.php?t=27562"
   ]
 }

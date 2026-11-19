@@ -60,6 +60,7 @@ if(EL9950_BUILD_FRONTEND)
   include(cmake/Dependencies.cmake)
   add_executable(el9950-emu
     src/frontend/app.cpp
+    src/frontend/lcd_image.cpp
     src/frontend/main.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp

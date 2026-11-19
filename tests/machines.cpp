@@ -334,6 +334,40 @@ void held_panel_keys()
     rejects([&] { session.key_pressed("setup"); });
 }
 
+void lcd_annunciators()
+{
+    using Flag = sharp::LcdAnnunciator;
+    sharp::Emulator emulator;
+    check(emulator.lcd_annunciators() == 0, "no LCD annunciators without a ROM");
+    emulator.load_rom(sc_rom(true));
+    emulator.write_internal8(0xfd, 1);
+    constexpr Flag first[]{Flag::right, Flag::left, Flag::second, Flag::insert, Flag::up};
+    constexpr Flag second[]{Flag::down, {}, Flag::busy, Flag::alpha, Flag::battery};
+    for (const auto address : {0x61e0, 0x61e1})
+    {
+        const auto expected = address == 0x61e0 ? std::span<const Flag>(first) : std::span<const Flag>(second);
+        for (unsigned bit = 0; bit < 8; ++bit)
+        {
+            emulator.write8(address, std::uint8_t(1U << bit));
+            check(emulator.lcd_annunciators() == (bit < expected.size() ? std::uint16_t(expected[bit]) : 0),
+                  "each LCD RAM bit drives only its mapped annunciator");
+        }
+        emulator.write8(address, 0);
+    }
+    emulator.write8(0x61e0, 0xff);
+    emulator.write8(0x61e1, 0xff);
+    check(emulator.lcd_annunciators() == 0x1ff, "all nine LCD annunciators can light simultaneously");
+    check(std::ranges::all_of(emulator.framebuffer(), [](auto pixel) { return pixel == 0; }),
+          "annunciator writes leave the 96 x 64 dot matrix alone");
+    const auto state = emulator.save_state();
+    emulator.write_internal8(0xfd, 0);
+    check(emulator.lcd_annunciators() == 0, "display disable hides all indicators");
+    emulator.load_state(state);
+    check(emulator.lcd_annunciators() == 0x1ff, "saved LCD RAM restores the indicators");
+    emulator.load_rom(tlcs_rom());
+    check(emulator.lcd_annunciators() == 0, "EL-99xx has no separate LCD annunciators");
+}
+
 void el9300_skin_keys(sharp::Emulator& emulator, bool real_rom)
 {
     const auto skin = el9950::skin_for(emulator.rom().model(), emulator.keyboard_side());
@@ -426,9 +460,46 @@ void optional_el9300()
     emulator.load_state(state);
     emulator.run_cycles(10000);
     check(emulator.save_state() == next, "real ROM deterministic restore and continuation");
+    using Flag = sharp::LcdAnnunciator;
+    const auto flags = [](std::initializer_list<Flag> indicators) {
+        std::uint16_t mask = 0;
+        for (const auto indicator : indicators) mask |= std::uint16_t(indicator);
+        return mask;
+    };
+    tap(el9950::Key::second);
+    check(emulator.lcd_annunciators() == flags({Flag::second}), "real ROM lights 2ndF");
+    tap(el9950::Key::second);
+    tap(el9950::Key::alpha);
+    check(emulator.lcd_annunciators() == flags({Flag::alpha}), "real ROM lights ALPHA");
+
+    // Start the firmware's LCD check and compare its alternating segment groups
+    // with the EL-9200 photos. The first pair uses checkerboards and the next
+    // pair uses the same segment masks with diagonal dot-matrix patterns.
+    emulator.load_rom(std::filesystem::path(path));
+    emulator.run_cycles(1'000'000);
+    tap(el9950::Key::clear, 600'000);
+    tap(el9950::Key::enter, 600'000);
+    emulator.set_key(el9950::Key::second, true);
+    emulator.set_key(el9950::Key::enter, true);
+    emulator.set_reset_contact(true);
+    emulator.set_reset_contact(false);
+    emulator.run_cycles(1'000'000);
+    emulator.set_key(el9950::Key::second, false);
+    emulator.set_key(el9950::Key::enter, false);
+    emulator.run_cycles(600'000);
+    tap(el9950::Key::n3, 600'000); // diag (select)
+    tap(el9950::Key::n1, 600'000); // LCD check
+    const auto even = flags({Flag::second, Flag::alpha, Flag::up, Flag::right});
+    const auto odd = flags({Flag::left, Flag::busy, Flag::insert, Flag::battery, Flag::down});
+    for (const auto phase : {even, odd, even, odd})
+    {
+        check(emulator.lcd_annunciators() == phase, "real ROM LCD diagnostic segment group");
+        tap(el9950::Key::enter, 600'000);
+    }
+
     emulator.load_rom(std::filesystem::path(path));
     el9300_skin_keys(emulator, true);
-    std::cout << "EL-9300 1.11 initialization, 52 skin keys and 1+2=3 passed\n";
+    std::cout << "EL-9300 1.11 initialization, 52 skin keys, LCD diagnostics and 1+2=3 passed\n";
 }
 } // namespace
 int main()
@@ -440,6 +511,7 @@ int main()
         opcode_decode_consistency();
         machines_and_states();
         held_panel_keys();
+        lcd_annunciators();
         sharp::Emulator emulator;
         emulator.load_rom(sc_rom());
         el9300_skin_keys(emulator, false);

@@ -34,6 +34,20 @@ struct CpuState
     std::vector<DebugRegister> registers;
 };
 
+// Bits in the physical left-to-right order of the EL-9200/9300 LCD.
+enum class LcdAnnunciator : std::uint16_t
+{
+    left = 1U << 0,
+    busy = 1U << 1,
+    second = 1U << 2,
+    alpha = 1U << 3,
+    insert = 1U << 4,
+    battery = 1U << 5,
+    up = 1U << 6,
+    down = 1U << 7,
+    right = 1U << 8,
+};
+
 // The frontend sees a complete machine, not an interchangeable CPU attached
 // to another family's bus. Registers, disassembly and serialization belong
 // to the backend. EL-99xx keeps its existing state format and implementation.
@@ -89,6 +103,7 @@ class Machine
     virtual bool backup_battery_healthy() const = 0;
     virtual void set_irq_line(std::uint8_t line, bool asserted) = 0;
     virtual std::span<const std::uint8_t> framebuffer() const = 0;
+    virtual std::uint16_t lcd_annunciators() const { return 0; }
     virtual CpuState cpu_state() const = 0;
     virtual std::vector<DebugRegister> device_registers() const { return {}; }
     virtual std::uint8_t peek8(std::uint32_t address) const = 0;
@@ -162,6 +177,7 @@ class Emulator
         set_irq_line(line, false);
     }
     std::span<const std::uint8_t> framebuffer() const;
+    std::uint16_t lcd_annunciators() const { return machine_ ? machine_->lcd_annunciators() : 0; }
     CpuState cpu_state() const { return machine().cpu_state(); }
     std::vector<DebugRegister> device_registers() const { return machine().device_registers(); }
     std::uint8_t peek8(std::uint32_t address) const { return machine().peek8(address); }

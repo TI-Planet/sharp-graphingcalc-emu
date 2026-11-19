@@ -168,7 +168,7 @@ class El93Machine final : public Machine, private Sc62015Bus
         // Firmware F70BC's eight row origins are 61DF,615F,60DF,605F,
         // 41DF,415F,40DF,405F. Each text row writes 96 columns backwards.
         // The two drivers therefore cover upper/lower halves, with 128-byte
-        // page strides. The separate annunciator wiring is still unknown.
+        // page strides.
         framebuffer_.fill(0);
         if (cpu_.read_internal(0xfd) & 1)
         {
@@ -180,6 +180,39 @@ class El93Machine final : public Machine, private Sc62015Bus
                 }
         }
         return framebuffer_;
+    }
+    std::uint16_t lcd_annunciators() const override
+    {
+        if (!(cpu_.read_internal(0xfd) & 1))
+            return 0;
+
+        // RootCubed's el_9300_emu identifies five of these bits. The EL-9300
+        // diagnostic alternates 55/AA and AA/55 at 61E0/61E1. The photos put
+        // BATT in the AA/55 group, matching the operating-battery check at
+        // F6F68-F6F8E. Bit 7 instead tracks the backup-battery text warning.
+        // DFC8E-DFCD5 updates the arrows and DFD33-DFD86 updates modifiers.
+        struct Segment
+        {
+            LcdAnnunciator indicator;
+            std::uint32_t address;
+            std::uint8_t bit;
+        };
+        constexpr Segment segments[]{
+            {LcdAnnunciator::left, 0x61e0, 1},
+            {LcdAnnunciator::busy, 0x61e1, 2},
+            {LcdAnnunciator::second, 0x61e0, 2},
+            {LcdAnnunciator::alpha, 0x61e1, 3},
+            {LcdAnnunciator::insert, 0x61e0, 3},
+            {LcdAnnunciator::battery, 0x61e1, 4},
+            {LcdAnnunciator::up, 0x61e0, 4},
+            {LcdAnnunciator::down, 0x61e1, 0},
+            {LcdAnnunciator::right, 0x61e0, 0},
+        };
+        std::uint16_t flags = 0;
+        for (const auto& segment : segments)
+            if (lcd_[lcd_index(segment.address)] & (1U << segment.bit))
+                flags |= static_cast<std::uint16_t>(segment.indicator);
+        return flags;
     }
     CpuState cpu_state() const override
     {
@@ -318,7 +351,7 @@ class El93Machine final : public Machine, private Sc62015Bus
     el9950::LinkPort &link() override { return link_; }
 
   private:
-    static int lcd_index(std::uint32_t address)
+    static constexpr int lcd_index(std::uint32_t address)
     {
         if (address >= 0x4000 && address < 0x4200)
             return int(address - 0x4000);

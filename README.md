@@ -18,8 +18,9 @@ prompt, accepts **CL**, then **ENTER** at `PRESS ANY KEY`, reaches `REAL MODE`,
 and evaluates `1+2` to `3`. The LCD's two controllers cover the upper and lower
 halves; column and page orientation come from the firmware's drawing routines.
 Native and web builds use the EL-9300 skin for identified EL-9300 ROMs, with the
-96×64 LCD and all 52 physical keys mapped. The ROM handles the printed 2ndF and
-ALPHA functions. EL-9200 and unidentified SC62015 ROMs use the button panel.
+96×64 LCD and all 52 physical keys mapped. Its nine LCD indicators are decoded
+from controller RAM and shown above the dot matrix. EL-9200 and unidentified
+SC62015 ROMs show the same LCD on the button panel.
 
 The backend has its own 20-bit bus, immutable ROM at `C0000–FFFFF`, RAM ending
 at `1FFFF`, separate 256-byte CPU internal RAM/I/O, interrupt/wake-up handling,
@@ -28,8 +29,7 @@ RAM profile; **only the supplied EL-9300 ROM has been exercised**. Unknown
 256 KiB images use the experimental SC62015/32 KiB profile. EL-9400/9600 support
 is not implemented by this change.
 
-Remaining work includes the separate LCD indicators, physical validation,
-link/UART wiring, and accurate clock, timers,
+Remaining work includes physical validation, link/UART wiring, and accurate clock, timers,
 power and wait-state behavior. The provisional 2.304 MHz oscillator corresponds
 to 768,000 CPU execution states per second; SC62015 `run` budgets count those
 states. See [`config/el9300.json`](config/el9300.json) for evidence and assumptions.
@@ -173,6 +173,7 @@ alongside `index.html`, `index.js` and `index.wasm`; no `index.data` bundle is n
 ## Controls
 
 - Drag a raw ROM into the native window, or use **Load ROM** on the web.
+- **Screenshot** saves the LCD as a PNG, including any active EL-9200/9300 indicators. The web build downloads the image and the desktop build opens a save dialog.
 - Number row, arrows, Return, Backspace and Delete map to their calculator equivalents.
 - Shift maps to `2ndF`, `X` maps to `X/theta/T/N`, and Escape maps to `ON`.
 - The reset-compartment contact is modeled as an explicit open/close operation so maintenance chords can remain held while the contact closes.

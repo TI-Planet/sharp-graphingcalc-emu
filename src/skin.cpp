@@ -115,7 +115,7 @@ namespace el9950
     }
     Skin skin_for(Model model, KeyboardSide side) {
         if (model == Model::el9300)
-            return {"SHARP_EL-9300.webp", 876, 1598, 175, 138, 534, 356, hits9300};
+            return {"SHARP_EL-9300.webp", 876, 1598, 194, 138, 496, 356, hits9300};
         if (!has_reversible_keyboard(model))
             return {"SHARP_EL-9950G.webp", 961, 2000, 102, 151, 762, 437, hits9950};
         std::string_view image;
