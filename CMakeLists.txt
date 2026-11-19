@@ -83,7 +83,7 @@ if(EL9950_BUILD_FRONTEND)
     set_target_properties(el9950-emu PROPERTIES SUFFIX ".html" OUTPUT_NAME "index")
     target_link_options(el9950-emu PRIVATE
       "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
-      -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY=1 -sUSE_SDL=3
+      -sALLOW_MEMORY_GROWTH=1 -sUSE_SDL=3
       "-sEXPORTED_FUNCTIONS=[\"_main\",\"_el9950_web_load_rom\"]"
       "-sEXPORTED_RUNTIME_METHODS=[\"ccall\",\"FS\",\"IDBFS\",\"addRunDependency\",\"removeRunDependency\"]"
       -lidbfs.js

@@ -14,6 +14,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 class FrontendApp
 {
@@ -46,6 +47,7 @@ private:
     void release_transient_inputs();
     void keyboard_event(SDL_Keycode code, bool down);
     void pulse(el9950::Key key);
+    int speed_index(const sharp::MachineInfo& info) const;
     void save_state_file(const std::filesystem::path& path);
     bool load_state_file(const std::filesystem::path& path);
     std::filesystem::path default_state_path() const;
@@ -55,10 +57,13 @@ private:
     SDL_Texture* skin_texture_{};
     std::string skin_image_;
     SDL_Texture* lcd_texture_{};
+    std::vector<std::uint8_t> lcd_framebuffer_;
+    std::uint16_t lcd_flags_{};
+    bool lcd_transparent_{};
     sharp::Emulator emulator_;
     bool running_{true};
     bool emulation_running_{true};
-    bool turbo_{};
+    std::optional<int> speed_override_;
     bool show_debugger_{true};
     std::string status_{"Drop an EL-99xx or EL-9200/9300 ROM to begin"};
 #ifndef __EMSCRIPTEN__

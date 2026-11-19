@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <stdexcept>
 #include <type_traits>
 
@@ -169,8 +170,12 @@ class El93Machine final : public Machine, private Sc62015Bus
         // 41DF,415F,40DF,405F. Each text row writes 96 columns backwards.
         // The two drivers therefore cover upper/lower halves, with 128-byte
         // page strides.
-        framebuffer_.fill(0);
-        if (cpu_.read_internal(0xfd) & 1)
+        const bool enabled = cpu_.read_internal(0xfd) & 1;
+        if (!framebuffer_dirty_ && enabled == framebuffer_enabled_)
+            return framebuffer_;
+        framebuffer_dirty_ = false;
+        framebuffer_enabled_ = enabled;
+        if (enabled)
         {
             for (unsigned y = 0; y < 64; ++y)
                 for (unsigned x = 0; x < 96; ++x)
@@ -179,6 +184,8 @@ class El93Machine final : public Machine, private Sc62015Bus
                     framebuffer_[y * 96 + x] = (lcd_[index] & (1U << (y % 8))) ? 255 : 0;
                 }
         }
+        else
+            framebuffer_.fill(0);
         return framebuffer_;
     }
     std::uint16_t lcd_annunciators() const override
@@ -253,8 +260,11 @@ class El93Machine final : public Machine, private Sc62015Bus
             ram_[address - (0x20000 - ram_.size())] = value;
             return;
         }
-        if (const auto index = lcd_index(address); index >= 0)
+        if (const auto index = lcd_index(address); index >= 0 && lcd_[unsigned(index)] != value)
+        {
             lcd_[unsigned(index)] = value;
+            framebuffer_dirty_ = true;
+        }
         if (address < 0xc0000 && observer_)
             observer_(cycles_, true, address, value);
     }
@@ -336,6 +346,7 @@ class El93Machine final : public Machine, private Sc62015Bus
         cpu_.set_state(s);
         std::copy(ram.begin(), ram.end(), ram_.begin());
         std::copy(lcd.begin(), lcd.end(), lcd_.begin());
+        framebuffer_dirty_ = true;
         std::copy(matrix.begin(), matrix.end(), matrix_.begin());
         cycles_ = cycles;
         keyboard_.restore_mask(keys);
@@ -372,16 +383,13 @@ class El93Machine final : public Machine, private Sc62015Bus
         if (port == 0xf2)
         {
             value = 0;
-            const auto outputs = cpu_.read_internal(0xf0) | (unsigned(cpu_.read_internal(0xf1)) << 8);
-            for (unsigned row = 0; row < 16; ++row)
-                if (outputs & (1U << row))
-                    value |= matrix_[row];
+            const unsigned outputs = cpu_.read_internal(0xf0) | (unsigned(cpu_.read_internal(0xf1)) << 8);
+            for (auto strobes = outputs; strobes; strobes &= strobes - 1)
+                value |= matrix_[std::countr_zero(strobes)];
             // F7324-F733E independently isolates CL to KO6/KI2.
-            for (unsigned index = 0; index < unsigned(el9950::Key::count); ++index)
+            for (auto keys = keyboard_.pressed_mask(); keys; keys &= keys - 1)
             {
-                const auto key = static_cast<el9950::Key>(index);
-                if (!keyboard_.pressed(key))
-                    continue;
+                const auto key = static_cast<el9950::Key>(std::countr_zero(keys));
                 if (const auto coordinate = el9300_key(key); coordinate && (outputs & (1U << coordinate->first)))
                     value |= 1U << coordinate->second;
             }
@@ -406,6 +414,7 @@ class El93Machine final : public Machine, private Sc62015Bus
     std::array<std::uint8_t, 1024> lcd_{};
     std::array<std::uint8_t, 16> matrix_{};
     mutable std::array<std::uint8_t, 96 * 64> framebuffer_{};
+    mutable bool framebuffer_dirty_{true}, framebuffer_enabled_{};
     Sc62015 cpu_;
     el9950::Keyboard keyboard_;
     el9950::LinkPort link_;

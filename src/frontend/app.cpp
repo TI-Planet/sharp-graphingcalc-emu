@@ -29,6 +29,10 @@
 namespace
 {
     constexpr float debugger_min_width = 720.f;
+    constexpr struct {
+        const char* label;
+        double multiplier;
+    } speeds[]{{"1x", 1.0}, {"1.5x", 1.5}, {"2x", 2.0}, {"4x", 4.0}};
 
     void draw_sc62015_lcd(ImDrawList* draw, SDL_Texture* texture, const ImVec2& min, const ImVec2& max) {
         float texture_width, texture_height;
@@ -288,7 +292,8 @@ void FrontendApp::frame() {
     const double elapsed = std::min(0.1, double(now - last_frame_ns_) / 1'000'000'000.0);
     last_frame_ns_ = now;
     if (emulation_running_ && emulator_.has_rom()) {
-        cycle_fraction_ += elapsed * emulator_.info().cycles_per_second * (turbo_ ? 16.0 : 1.0);
+        const auto info = emulator_.info();
+        cycle_fraction_ += elapsed * info.cycles_per_second * speeds[speed_index(info)].multiplier;
         const auto budget = static_cast<std::uint64_t>(cycle_fraction_);
         cycle_fraction_ -= double(budget);
         try { emulator_.run_cycles(budget); }
@@ -309,6 +314,10 @@ void FrontendApp::frame() {
     SDL_RenderClear(renderer_);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer_);
     SDL_RenderPresent(renderer_);
+}
+
+int FrontendApp::speed_index(const sharp::MachineInfo& info) const {
+    return speed_override_.value_or(info.id == "el92xx" ? 1 : 0);
 }
 
 void FrontendApp::event(const SDL_Event& e) {
@@ -589,7 +598,15 @@ void FrontendApp::render_toolbar() {
     if (ImGui::Button(emulation_running_ ? "Pause" : "Run"))
         emulation_running_ = !emulation_running_;
     ImGui::SameLine();
-    ImGui::Checkbox("Turbo", &turbo_);
+    const auto info = emulator_.info();
+    const int speed = speed_index(info);
+    ImGui::SetNextItemWidth(63);
+    if (ImGui::BeginCombo("Speed", speeds[speed].label)) {
+        for (int index = 0; index < static_cast<int>(std::size(speeds)); ++index)
+            if (ImGui::Selectable(speeds[index].label, index == speed))
+                speed_override_ = index;
+        ImGui::EndCombo();
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
@@ -787,7 +804,13 @@ void FrontendApp::render_calculator() {
 }
 
 bool FrontendApp::update_lcd_texture(bool transparent_background) {
-    const auto image = make_lcd_image(emulator_);
+    const auto fb = emulator_.framebuffer();
+    const auto flags = emulator_.lcd_annunciators();
+    if (lcd_texture_ && lcd_flags_ == flags && lcd_transparent_ == transparent_background &&
+        std::ranges::equal(fb, lcd_framebuffer_))
+        return true;
+
+    const auto image = make_lcd_image(emulator_.info(), fb, flags);
     float width = 0, height = 0;
     if (!lcd_texture_ || !SDL_GetTextureSize(lcd_texture_, &width, &height) || width != image.width || height != image.height) {
         if (lcd_texture_) SDL_DestroyTexture(lcd_texture_);
@@ -800,15 +823,19 @@ bool FrontendApp::update_lcd_texture(bool transparent_background) {
     for (std::size_t i = 0; i < pixels.size(); ++i)
         pixels[i] = image.dots[i] ? LcdImage::foreground : (transparent_background ? 0 : LcdImage::background);
     if (!SDL_UpdateTexture(lcd_texture_, nullptr, pixels.data(), image.width * sizeof(std::uint32_t))) {
+        lcd_framebuffer_.clear();
         status_ = SDL_GetError();
         return false;
     }
+    lcd_framebuffer_.assign(fb.begin(), fb.end());
+    lcd_flags_ = flags;
+    lcd_transparent_ = transparent_background;
     return true;
 }
 
 void FrontendApp::save_screenshot()
 try {
-    auto png = encode_lcd_png(make_lcd_image(emulator_));
+    auto png = encode_lcd_png(make_lcd_image(emulator_.info(), emulator_.framebuffer(), emulator_.lcd_annunciators()));
 #ifdef __EMSCRIPTEN__
     const auto model = emulator_.rom().model();
     const auto filename = model == el9950::Model::unknown ? std::string("Sharp.png")

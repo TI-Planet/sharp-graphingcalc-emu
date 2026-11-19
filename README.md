@@ -174,6 +174,7 @@ alongside `index.html`, `index.js` and `index.wasm`; no `index.data` bundle is n
 
 - Drag a raw ROM into the native window, or use **Load ROM** on the web.
 - **Screenshot** saves the LCD as a PNG, including any active EL-9200/9300 indicators. The web build downloads the image and the desktop build opens a save dialog.
+- **Speed** offers 1x, 1.5x, 2x and 4x. EL-9200/9300 defaults to 1.5x and EL-99xx defaults to 1x. Headless cycle budgets are independent of this setting.
 - Number row, arrows, Return, Backspace and Delete map to their calculator equivalents.
 - Shift maps to `2ndF`, `X` maps to `X/theta/T/N`, and Escape maps to `ON`.
 - The reset-compartment contact is modeled as an explicit open/close operation so maintenance chords can remain held while the contact closes.

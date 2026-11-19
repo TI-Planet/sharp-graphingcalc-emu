@@ -249,6 +249,12 @@ void machines_and_states()
     check(session.framebuffer().size() == 96 * 64 && session.framebuffer()[0] == 255 &&
               session.framebuffer()[63 * 96] == 255,
           "LCD bank, column and row orientation");
+    session.write8(0x61df, 0x02);
+    check(session.framebuffer()[0] == 0 && session.framebuffer()[96] == 255, "LCD write updates the framebuffer");
+    session.write_internal8(0xfd, 0);
+    check(session.framebuffer()[96] == 0, "LCD disable clears the framebuffer");
+    session.write_internal8(0xfd, 1);
+    check(session.framebuffer()[96] == 255, "LCD enable redraws from retained pixels");
     session.write_internal8(0xf0, 0x40);
     session.set_key(el9950::Key::clear, true);
     check(session.read_internal8(0xf2) == 4, "CL KO6/KI2");
@@ -266,8 +272,12 @@ void machines_and_states()
     const auto state = session.save_state();
     session.reset();
     session.write8(0x18000, 0);
+    session.write8(0x61df, 0);
+    session.write_internal8(0xfd, 1);
+    check(session.framebuffer()[96] == 0, "LCD changes before loading state");
     session.load_state(state);
     check(session.save_state() == state && session.peek8(0x18000) == 0xab, "SC deterministic state round trip");
+    check(session.framebuffer()[96] == 255, "state restore redraws the framebuffer");
     auto damaged = state;
     damaged[100] ^= 1;
     rejects([&] { session.load_state(damaged); });

@@ -15,5 +15,6 @@ struct LcdImage
     static constexpr unsigned sc62015_texels_per_dot = 2;
 };
 
-LcdImage make_lcd_image(const sharp::Emulator& emulator);
+LcdImage make_lcd_image(const sharp::MachineInfo& info, std::span<const std::uint8_t> framebuffer,
+                        std::uint16_t flags);
 std::vector<std::uint8_t> encode_lcd_png(const LcdImage& image);

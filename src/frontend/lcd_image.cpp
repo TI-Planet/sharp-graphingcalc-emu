@@ -58,10 +58,8 @@ void append_chunk(std::vector<std::uint8_t>& png, std::string_view type, std::sp
 }
 }
 
-LcdImage make_lcd_image(const sharp::Emulator& emulator)
+LcdImage make_lcd_image(const sharp::MachineInfo& info, std::span<const std::uint8_t> fb, std::uint16_t flags)
 {
-    const auto info = emulator.info();
-    const auto fb = emulator.framebuffer();
     if (info.id != "el92xx")
         return {info.lcd_width, info.lcd_height, {fb.begin(), fb.end()}};
 
@@ -69,7 +67,6 @@ LcdImage make_lcd_image(const sharp::Emulator& emulator)
     constexpr auto scale = LcdImage::sc62015_texels_per_dot;
     LcdImage image{scale * info.lcd_width, scale * info.lcd_height + header, {}};
     image.dots.resize(image.width * image.height);
-    const auto flags = emulator.lcd_annunciators();
     for (const auto& segment : segments) {
         if (!(flags & static_cast<std::uint16_t>(segment.flag)))
             continue;
